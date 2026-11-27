@@ -16,18 +16,21 @@ export default {
   async setup(ctx) {
     // Core creates this directory before plugins load, so realpath must succeed;
     // core advertises the realpath'd form in the prompt.
-    const sharedTmp = fs.realpathSync(path.join(os.tmpdir(), "opencode"));
+    const tempRoot = path.join(os.tmpdir(), "opencode");
+    const promptTmp = fs.realpathSync(tempRoot);
+    const sharedTmp = fs.realpathSync.native(tempRoot);
     const projectTmp = path.join(sharedTmp, projectSlug(ctx.location.project, os.homedir()));
     fs.mkdirSync(projectTmp, { recursive: true });
 
-    if (fs.lstatSync(projectTmp).isSymbolicLink() || fs.realpathSync(projectTmp) !== projectTmp) {
+    if (fs.lstatSync(projectTmp).isSymbolicLink() || path.relative(projectTmp, fs.realpathSync.native(projectTmp)) !== "") {
       throw new Error("Unsafe project temporary directory");
     }
     const lease = path.join(projectTmp, ".sanitize-lease-" + process.pid + "-" + randomUUID());
     fs.writeFileSync(lease, "", { flag: "wx" });
     const warned = new Set();
     await ctx.session.hook("context", (input) => {
-      if (rewriteTmpHint(input.system, sharedTmp, projectTmp)) return;
+      if (rewriteTmpHint(input.system, promptTmp, projectTmp)) return;
+      if (promptTmp !== sharedTmp && rewriteTmpHint(input.system, sharedTmp, projectTmp)) return;
       if (warned.has(input.sessionID)) return;
       warned.add(input.sessionID);
       // The plugin API exposes no server-side logger; console output reaches the
