@@ -11,6 +11,10 @@ import { acquireManager } from "./src/manager.js";
 import { Sanitize } from "./src/rpc.js";
 import metadata from "./package.json" with { type: "json" };
 
+// Bound recurring diagnostics per server process, not per session or project.
+let warnedPrompt=false,loggedRegistration=false;
+const warnedMethods=new Set();
+
 export default {
   id: "temp-sanitize",
   async setup(ctx) {
@@ -27,12 +31,11 @@ export default {
     }
     const lease = path.join(projectTmp, ".sanitize-lease-" + process.pid + "-" + randomUUID());
     fs.writeFileSync(lease, "", { flag: "wx" });
-    let warned = false;
     await ctx.session.hook("context", (input) => {
       if (rewriteTmpHint(input.system, promptTmp, projectTmp)) return;
       if (promptTmp !== sharedTmp && rewriteTmpHint(input.system, sharedTmp, projectTmp)) return;
-      if (warned) return;
-      warned = true;
+      if (warnedPrompt) return;
+      warnedPrompt = true;
       // The plugin API exposes no server-side logger; console output reaches the
       // OpenCode log. Not fatal on purpose: a missing hint only means models fall
       // back to the shared directory, which must not break the session.
@@ -68,7 +71,6 @@ export default {
       };
       // OpenCode's promise adapter invokes Effect.tryPromise: even synchronous
       // handlers must return a Promise, otherwise the host raises rpc.internal.
-      const warnedMethods = new Set();
       const asyncHandlers = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [
         name, async (input, context) => {
           try { return await handler(input); }
@@ -81,7 +83,7 @@ export default {
       ]));
       if (!ctx.rpc?.register) throw new Error("Temp Sanitize requires the OpenCode server RPC API");
       registration = await ctx.rpc.register(Sanitize, asyncHandlers);
-      console.info("[temp-sanitize] RPC registered", metadata.version);
+      if(!loggedRegistration){loggedRegistration=true;console.info("[temp-sanitize] RPC registered", metadata.version);}
     } catch (error) {
       await release();
       fs.rmSync(lease, {force:true});
