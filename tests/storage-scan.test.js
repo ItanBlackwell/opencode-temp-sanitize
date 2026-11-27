@@ -57,12 +57,34 @@ describe("complete read-only inventory",()=>{
     const old=new Date(Date.now()-10*86400000);
     for(const target of [unknown,upload,owned,nestedUpload])await fs.utimes(target,old,old);
     expect(total(await analyzeStorage(root))).toBe(400);
-    await sweepProjects(root,Date.now());
+    const warnings=[];
+    const removed=await sweepProjects(root,Date.now(),undefined,{report:(error,target)=>warnings.push({error:error?.message,target})});
+    expect({removed,warnings}).toEqual({removed:{files:1,dirs:0},warnings:[]});
     await expect(fs.stat(unknown)).resolves.toBeDefined();
     await expect(fs.stat(upload)).resolves.toBeDefined();
     await expect(fs.stat(nestedUpload)).resolves.toBeDefined();
     await expect(fs.stat(owned)).rejects.toMatchObject({code:"ENOENT"});
     expect(total(await analyzeStorage(root))).toBe(300);
+  });
+  it("handles an aliased ancestor of the temp root without deleting outside it",async()=>{
+    const owned=await file("project-1234abcd/old.bin",100);
+    const foreign=await file("legacy-task/old.bin",100);
+    const old=new Date(Date.now()-10*86400000);
+    for(const target of [owned,foreign])await fs.utimes(target,old,old);
+    const alias=path.join(sandbox,"alias");
+    await fs.symlink(root,alias,process.platform==="win32"?"junction":"dir");
+    const nestedRoot=path.join(root,"nested");
+    await fs.mkdir(nestedRoot);
+    const nestedProject=path.join(nestedRoot,"project-1234abcd");
+    await fs.mkdir(nestedProject);
+    const nestedFile=path.join(nestedProject,"old.bin");
+    await fs.writeFile(nestedFile,Buffer.alloc(100));
+    await fs.utimes(nestedFile,old,old);
+    expect(await sweepProjects(path.join(alias,"nested"),Date.now())).toEqual({files:1,dirs:0});
+    await expect(fs.stat(nestedFile)).rejects.toMatchObject({code:"ENOENT"});
+    expect(await sweepProjects(alias,Date.now())).toEqual({files:0,dirs:0});
+    await expect(fs.stat(owned)).resolves.toBeDefined();
+    await expect(fs.stat(foreign)).resolves.toBeDefined();
   });
   it("rejects a missing root instead of reporting a false zero",async()=>{
     await expect(analyzeStorage(path.join(sandbox,"missing"))).rejects.toMatchObject({code:"ENOENT"});
