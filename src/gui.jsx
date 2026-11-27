@@ -117,17 +117,18 @@ export default Plugin.define({
       const saveChanges=()=>{if(busy()||!dirty()||!valid())return;return run(async()=>{const policy=await call().save({...config()});if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();await refreshCandidates();}});};
       const total=()=>summarizeRows(rows());
       const selectionCount=()=>selection().size;
+      const canSelect=()=>!busy()&&!dirty()&&snapshot()?.matchesSaved===true;
       const pageItems=()=>page()?.items??[];
       const pageAll=()=>pageItems().length>0&&pageItems().every(item=>selection().has(item.id));
       const pageNew=()=>pageItems().filter(item=>!selection().has(item.id)).length;
       const clearSelection=()=>{setSelection(new Set());setConfirm(false);};
       function choose(id,checked){
-        if(busy()||dirty())return;
+        if(!canSelect())return;
         setSelection(previous=>{const next=new Set(previous);if(checked){if(next.size<500)next.add(id);}else next.delete(id);return next;});
         setConfirm(false);setSelectionNotice(false);
       }
       function choosePage(checked){
-        if(busy()||dirty())return;
+        if(!canSelect())return;
         const next=new Set(selection());
         if(checked&&next.size+pageNew()>500)return;
         for(const item of pageItems())checked?next.add(item.id):next.delete(item.id);
@@ -206,7 +207,7 @@ export default Plugin.define({
         if(mode!=="preview"&&(dirty()||confirm()!==mode))return;
         const selectedIds=[...selection()];
         const id=snapshot()?.id;
-        if(mode==="selected"&&(!id||!selectedIds.length))return;
+        if(mode==="selected"&&(!id||!selectedIds.length||!snapshot()?.matchesSaved))return;
         const record=await (mode==="preview"?call().preview(draft):mode==="selected"?call().cleanSelected({confirmed:true,snapshotId:id,ids:selectedIds}):call().clean({confirmed:true}));
         if(!active)return;
         setResult(record);setPreviewPolicy(draft);clearSelection();setSelectionNotice(false);
@@ -257,19 +258,19 @@ export default Plugin.define({
           </ui.SettingsSection>
           <Show when={snapshot()?.id}>
             <ui.SettingsSection title={t("candidates")}>
-              <ui.SettingsRow title={metric("fileCount",snapshot().count)} description={formatStorage(snapshot().bytes,locale())+" · "+date(snapshot().time)+(snapshot().errors?" · "+metric("warnings",snapshot().errors):"")}>
+              <ui.SettingsRow title={metric("fileCount",snapshot().count)} description={formatStorage(snapshot().bytes,locale())+" · "+label("retentionDays")+": "+number(snapshot().retentionDays)+" · "+date(snapshot().time)+(snapshot().errors?" · "+metric("warnings",snapshot().errors):"")}>
                 <ui.Button size="small" variant="neutral" disabled={busy()} onClick={()=>{const open=!listOpen();setListOpen(open);if(open&&!page()&&snapshot().count)void run(()=>fetchPage(0));}}>{t("details")}</ui.Button>
               </ui.SettingsRow>
               <Show when={snapshot().legacyCount>0}><ui.SettingsRow title={t("legacy")} description={t("helpLegacy")}>{number(snapshot().legacyCount)}</ui.SettingsRow></Show>
               <Show when={selectionNotice()}><ui.SettingsRow title={t("selectionChanged")}/></Show>
               <Show when={listOpen()&&snapshot().count>0}>
-                <ui.SettingsRow title={metric("selected",selectionCount())+" / 500"} description={dirty()?t("unsaved"):undefined}>
+                <ui.SettingsRow title={metric("selected",selectionCount())+" / 500"} description={dirty()?t("unsaved"):!snapshot()?.matchesSaved?t("preview"):undefined}>
                   <Actions>
                     <ui.Button size="small" disabled={busy()||!selectionCount()} onClick={clearSelection}>{t("common.cancel")}</ui.Button>
-                    <ui.Button size="small" variant="danger" disabled={busy()||dirty()||!selectionCount()} onClick={()=>setConfirm("selected")}>{t("cleanSelected")}</ui.Button>
+                    <ui.Button size="small" variant="danger" disabled={!canSelect()||!selectionCount()} onClick={()=>setConfirm("selected")}>{t("cleanSelected")}</ui.Button>
                   </Actions>
                 </ui.SettingsRow>
-                <Show when={confirm()==="selected"&&!dirty()&&selectionCount()>0}>
+                <Show when={confirm()==="selected"&&!dirty()&&snapshot()?.matchesSaved&&selectionCount()>0}>
                   <ui.SettingsRow title={t("confirmClean")} description={metric("selected",selectionCount())}>
                     <Actions><ui.Button size="small" disabled={busy()} onClick={()=>setConfirm(false)}>{t("common.cancel")}</ui.Button>
                     <ui.Button size="small" variant="danger" disabled={busy()} onClick={()=>run(()=>cleanup("selected"))}>{t("cleanSelected")}</ui.Button></Actions>
@@ -277,7 +278,7 @@ export default Plugin.define({
                 </Show>
                 <Show when={page()} fallback={<div style={{padding:"12px"}}><ui.Loader/></div>}>
                   <div style={{display:"flex","align-items":"center","justify-content":"space-between","flex-wrap":"wrap",gap:"8px",padding:"8px 0"}}>
-                    <label style={{display:"flex","align-items":"center",gap:"8px"}}><input type="checkbox" checked={pageAll()} disabled={busy()||dirty()||(!pageAll()&&selectionCount()+pageNew()>500)} onChange={e=>choosePage(e.currentTarget.checked)}/>{t("selectPage")}</label>
+                    <label style={{display:"flex","align-items":"center",gap:"8px"}}><input type="checkbox" checked={pageAll()} disabled={!canSelect()||(!pageAll()&&selectionCount()+pageNew()>500)} onChange={e=>choosePage(e.currentTarget.checked)}/>{t("selectPage")}</label>
                     <Actions>
                       <button type="button" aria-label={t("common.goBack")} disabled={busy()||page().offset===0} style={{padding:"4px 10px",cursor:"pointer"}} onClick={()=>run(()=>fetchPage(Math.max(0,page().offset-50)))}>‹</button>
                       <span style={{"font-variant-numeric":"tabular-nums","font-size":"12px"}}>{number(page().offset+1)}–{number(page().offset+pageItems().length)} / {number(snapshot().count)}</span>
@@ -286,7 +287,7 @@ export default Plugin.define({
                   </div>
                   <div style={{"max-height":"320px","overflow-y":"auto","min-width":"0"}}>
                     <For each={pageItems()}>{item=><label title={item.path+" · "+date(item.modifiedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0",borderBottom:"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
-                      <input type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={busy()||dirty()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
+                      <input type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={!canSelect()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
                       <span dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px"}}>{item.path}</span>
                       <span style={{"flex-shrink":"0","font-size":"11px","font-variant-numeric":"tabular-nums"}}>{formatStorage(item.bytes,locale())}</span>
                     </label>}</For>
