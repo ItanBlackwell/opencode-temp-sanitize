@@ -1,0 +1,35 @@
+name: Update published release notes
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/release-notes/v*.md"
+      - ".github/workflows/release-notes.yml"
+permissions:
+  contents: read
+jobs:
+  update:
+    if: >-
+      ${{ github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release-notes: v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Update only the existing release description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        shell: bash
+        run: |
+          [[ "$COMMIT_MESSAGE" =~ ^release-notes:\ v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          tag="${COMMIT_MESSAGE#release-notes: }"
+          notes="docs/release-notes/$tag.md"
+          test -s "$notes"
+          test "$(gh release view "$tag" --repo "$GH_REPO" --json isDraft --jq .isDraft)" = false
+          gh release edit "$tag" --repo "$GH_REPO" --notes-file "$notes"
+          gh release view "$tag" --repo "$GH_REPO" --json tagName,url,assets
