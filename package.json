@@ -1,6 +1,6 @@
 {
   "name": "@gfn-cis/opencode-temp-sanitize",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "OpenCode 2 plugin that gives each project its own temporary directory",
   "type": "module",
   "main": "index.js",
