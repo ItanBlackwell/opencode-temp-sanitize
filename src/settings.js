@@ -20,6 +20,21 @@ export function migrate(value) {
   if(value?.dryRun === true) return validate({...value,enabled:false});
   return validate(value);
 }
+// New atomic writes encode their owner PID; recover only dead-writer files.
+export async function pruneSettingsTemps(directory) {
+  let names;
+  try {names=await fs.readdir(directory);} catch(error){if(error.code==="ENOENT")return;throw error;}
+  for(const name of names){
+    const match=/^settings\.json\.(\d+)\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.exec(name);
+    if(!match)continue;
+    const pid=Number(match[1]);
+    if(!Number.isSafeInteger(pid)||pid<=0||pid>2147483647)continue;
+    try{process.kill(pid,0);continue;}catch(error){if(error.code!=="ESRCH")continue;}
+    const target=path.join(directory,name);
+    try{const stat=await fs.lstat(target);if(stat.isFile()&&!stat.isSymbolicLink())await fs.unlink(target);}
+    catch(error){if(error.code!=="ENOENT")throw error;}
+  }
+}
 export function settingsStore(directory) {
   const file = path.join(directory, "settings.json");
   return {
@@ -30,7 +45,8 @@ export function settingsStore(directory) {
     async write(value) {
       const data = validate(value);
       await fs.mkdir(directory, {recursive:true, mode:0o700});
-      const temp = file + "." + randomUUID();
+      await pruneSettingsTemps(directory).catch(()=>{});
+      const temp = file + "." + process.pid + "." + randomUUID();
       try {
         await fs.writeFile(temp, JSON.stringify({...data,dryRun:!data.enabled}, null, 2), {flag:"wx", mode:0o600});
         await fs.rename(temp, file);
