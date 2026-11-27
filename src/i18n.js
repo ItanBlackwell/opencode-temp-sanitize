@@ -16,5 +16,5 @@ export const i18n = Object.fromEntries(locales.map(locale => {
   const values=[...base,...compact];
   return [locale,Object.fromEntries(keys.map((key,i)=>[key,values[i].trim()]))];
 }));
-export const parameterKeys = ["enabled","retentionDays","intervalMinutes","maxBytes","maxFiles","dryRun","legacy","updates"];
+export const parameterKeys = ["enabled","retentionDays","intervalMinutes","maxBytes","maxFiles","legacy","updates"];
 export const helpKeys = {enabled:"helpEnabled",retentionDays:"helpRetention",intervalMinutes:"helpInterval",maxBytes:"helpBytes",maxFiles:"helpFiles",dryRun:"helpDry",legacy:"helpLegacy",updates:"helpUpdate"};
