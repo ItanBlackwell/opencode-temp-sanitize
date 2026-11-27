@@ -86,6 +86,8 @@ describe("plugin", () => {
 
     expect(input.env.TMPDIR).toBe(path.join(shared, fs.readdirSync(shared)[0]));
     expect(input.env.PATH).toBe("/bin");
+    expect(input.env.TEMP).toBe(input.env.TMPDIR);
+    expect(input.env.TMP).toBe(input.env.TMPDIR);
   });
 
   it("warns once per session when the hint is missing", async () => {
@@ -101,7 +103,7 @@ describe("plugin", () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
-  it("deletes stale files of the project on setup", async () => {
+  it("retains stale files of a leased project on setup", async () => {
     const shared = path.join(root, "tmp", "opencode");
     await load(project());
     const own = path.join(shared, fs.readdirSync(shared)[0]);
@@ -109,12 +111,13 @@ describe("plugin", () => {
     const fresh = path.join(own, "new.log");
     fs.writeFileSync(stale, "x");
     fs.writeFileSync(fresh, "x");
-    const old = new Date(Date.now() - 49 * 60 * 60 * 1000);
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     fs.utimesSync(stale, old, old);
 
     await load(project());
 
-    await vi.waitFor(() => expect(fs.existsSync(stale)).toBe(false));
+    await cleanups.pop()();
+    expect(fs.existsSync(stale)).toBe(true);
     expect(fs.existsSync(fresh)).toBe(true);
   });
 
