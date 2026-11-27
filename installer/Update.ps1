@@ -1,6 +1,5 @@
 . (Join-Path $PSScriptRoot 'Common.ps1')
 try {
-  Assert-Closed
   $target=Join-Path (Get-Root) 'plugins\opencode-temp-sanitize'
   $current=Assert-Identity $target
   [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -22,7 +21,7 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $archive=[IO.Compression.ZipFile]::OpenRead($zip)
   try {
-    foreach($file in @('package.json','dist/server.mjs','dist/gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','installer/Common.ps1','installer/Install.ps1','installer/Update.ps1','installer/Uninstall.ps1')){
+    foreach($file in @('package.json','dist/server.mjs','dist/gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','installer/Common.ps1','installer/Install.ps1','installer/Update.ps1','installer/Uninstall.ps1','Apply.cmd','Rollback.cmd','installer/Apply.ps1','installer/Rollback.ps1')){
       $entry=$archive.GetEntry("Temp-Sanitize/$file")
       if(!$entry -or $entry.Length -gt 100MB){throw "Invalid payload: $file"}
       $dest=Join-Path $tmp $file
