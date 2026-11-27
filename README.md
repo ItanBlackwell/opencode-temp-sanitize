@@ -228,6 +228,8 @@ The instruction rewrite depends on OpenCode's `core/environment` wording in `pac
 
 MIT. See [LICENSE](LICENSE).
 
-Based on the original [GFN-CIS/opencode-temp-sanitize](https://github.com/GFN-CIS/opencode-temp-sanitize), copyright © 2026 GFN-CIS. This fork extends the project with safe cleanup policies, Desktop controls, storage analysis, selective cleanup, localization, a portable installer and the sidebar indicator.
+Originally based on [GFN-CIS/opencode-temp-sanitize](https://github.com/GFN-CIS/opencode-temp-sanitize), copyright © 2026 GFN-CIS.
+
+Now independently maintained by [ItanBlackwell](https://github.com/ItanBlackwell), copyright © 2026 ItanBlackwell for modifications. This project extends the original with safe cleanup policies, Desktop controls, storage analysis, selective cleanup, localization, a portable installer and the sidebar indicator. The original copyright notice and MIT license are retained.
 
 For vulnerabilities, avoid posting sensitive details publicly; see [SECURITY.md](SECURITY.md).
