@@ -62,7 +62,10 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
         count++;
         bytes += s.size;
         const age = now - Math.max(s.atimeMs, s.mtimeMs);
-        if (age > maxAgeMs) candidates.push({ target, s, age });
+        if (age > maxAgeMs) {
+          if (options.dryRun) report(null, target, s);
+          else candidates.push({ target, s, age });
+        }
       }
     }
     if (!root) folders.push(folder);
@@ -72,10 +75,6 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
   candidates.sort((a, b) => b.age - a.age);
   for (const { target, s } of candidates) {
     if (options.guard && await options.guard()) break;
-    if (options.dryRun) {
-      report(null, target);
-      continue;
-    }
     await safe(async () => {
       const current = await fs.lstat(target);
       if (current.ino !== s.ino || current.dev !== s.dev ||
