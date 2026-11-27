@@ -70,6 +70,7 @@ export default {
         clean: input => manager.clean(input),
         history: () => manager.history(),
         candidates: () => manager.candidates(),
+        indicator: () => manager.indicator(),
         candidatePage: input => manager.candidatePage(input),
         cleanSelected: input => manager.cleanSelected(input),
       };
