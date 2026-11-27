@@ -141,3 +141,33 @@ describe("isProjectDir", () => {
     expect(isProjectDir(name)).toBe(expected);
   });
 });
+
+describe("safe cleanup", () => {
+  it("protects a live leased project", async () => {
+    const target = file("global/old.txt", OLD);
+    file("global/.sanitize-lease-" + process.pid + "-abcd", OLD);
+    await sweepProjects(root, NOW);
+    expect(fs.existsSync(target)).toBe(true);
+  });
+  it("preserves uploads and dry-run candidates", async () => {
+    const target = file("global/old.txt", OLD);
+    const upload = file("global/uploads/old.txt", OLD);
+    await sweepProjects(root, NOW, MAX_AGE_MS, { dryRun: true });
+    expect(fs.existsSync(target)).toBe(true);
+    await sweepProjects(root, NOW);
+    expect(fs.existsSync(target)).toBe(false);
+    expect(fs.existsSync(upload)).toBe(true);
+  });
+  it("continues after a locked file", async () => {
+    const locked = file("global/locked.txt", OLD);
+    const other = file("global/other.txt", OLD);
+    const unlink = fs.promises.unlink;
+    vi.spyOn(fs.promises, "unlink").mockImplementation(async (name) => {
+      if (name === locked) throw Object.assign(new Error("locked"), { code: "EBUSY" });
+      return unlink(name);
+    });
+    await sweepProjects(root, NOW);
+    expect(fs.existsSync(locked)).toBe(true);
+    expect(fs.existsSync(other)).toBe(false);
+  });
+});
