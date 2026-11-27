@@ -14,7 +14,7 @@ export function acquireManager(root,configDir){
 }
 export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   const store=settingsStore(configDir);
-  let running,stopped=false,timer,last=-Infinity,snapshot;
+  let running,stopped=false,timer,last=-Infinity,snapshot,lastTickWarning=-Infinity;
   const history=[];
   const makeRecord=(mode,dryRun)=>({time:new Date(clock()).toISOString(),mode,dryRun,files:0,dirs:0,candidates:0,errors:0,sample:[]});
   function remember(record){history.unshift(record);if(history.length>50)history.pop();}
@@ -36,8 +36,8 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
     let bytes=0,legacyCount=0;
     const age=config.retentionDays*86400000;
     const now=clock();
-    const options={dryRun,maxBytes:config.maxBytes,maxFiles:config.maxFiles,report(error,target,stat){
-      if(error){record.errors++;console.warn("[temp-sanitize]",error.message,target);return;}
+    const options={dryRun,maintenance:true,maxBytes:config.maxBytes,maxFiles:config.maxFiles,report(error,target,stat){
+      if(error){record.errors++;return;}
       if(!dryRun||!stat)return;
       const relative=path.relative(root,target);
       // Root files can be reported, but cannot become selectable deletion targets.
@@ -45,7 +45,8 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       entries.push({path:relative,...identity(stat)});
       bytes+=stat.size;
     }};
-    if(!dryRun)snapshot=undefined;
+    // Release the previous snapshot before constructing a replacement. No historical file lists.
+    snapshot=undefined;
     const total=await sweepProjects(root,now,age,options);
     record.files=total.files;record.dirs=total.dirs;
     if(dryRun){
@@ -83,7 +84,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       record.candidates=entries.length;
       for(const entry of entries){
         try{if(await deleteCandidate(root,entry,saved,clock()))record.files++;else record.errors++;}
-        catch(error){record.errors++;console.warn("[temp-sanitize] selected cleanup",error.message);}
+        catch(error){record.errors++;}
       }
       const attempted=new Set(input.ids);
       const remaining=old.entries.filter((_,i)=>!attempted.has(i));
@@ -99,7 +100,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
         last=clock();
         await run("scheduled");
       }
-    }catch(e){console.warn("[temp-sanitize] cleanup",e.message);}
+    }catch(e){if(clock()-lastTickWarning>=3600000){lastTickWarning=clock();console.warn("[temp-sanitize] scheduled operation failed:",e.message);}}
     finally{if(schedule&&!stopped){timer=setTimeout(tick,15000);timer.unref();}}
   }
   if(schedule){timer=setTimeout(tick,0);timer.unref();}
@@ -108,6 +109,6 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
     candidates:summary,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
     clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},
     history:()=>history.slice(),tick,
-    async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;}
+    async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;history.length=0;}
   };
 }
