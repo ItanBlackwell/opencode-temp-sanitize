@@ -15,6 +15,8 @@ const policy = object({
   maxFiles:positive, legacy:boolean,
 });
 const row = object({name:string,files:count,bytes:count,protected:boolean,errors:count});
+const inventory = object({id:string,time:string,count,files:count,bytes:count,errors:count});
+const inventoryPage = object({snapshotId:string,offset:count,items:{type:"array",items:row,maxItems:50}});
 const record = object({
   time:string,mode:{type:"string",enum:["automatic","manual","preview"]},dryRun:boolean,
   files:count,dirs:count,candidates:count,errors:count,sample:array(string),
@@ -29,7 +31,8 @@ export const Sanitize = Rpc.define({
     protocol:method(empty,object({version:string,root:string})),
     settings:method(empty,policy),
     save:method(policy,policy),
-    analyze:method(empty,array(row)),
+    analyze:method(empty,inventory),
+    storagePage:method(object({snapshotId:string,offset:count}),inventoryPage),
     preview:method(policy,record),
     clean:method(object({confirmed:{type:"boolean",const:true}}),record),
     history:method(empty,array(record)),
