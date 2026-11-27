@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {sweepDir,sweepProjects} from "./sweep.js";
 import {analyzeStorage} from "./storage-scan.js";
 import {settingsStore,validate,pruneSettingsTemps} from "./settings.js";
-import {candidatePage,selectionEntries,deleteCandidate,identity,samePolicy} from "./candidates.js";
+import {PAGE_SIZE,candidatePage,selectionEntries,deleteCandidate,identity,samePolicy} from "./candidates.js";
 
 const managers=new Map();
 export function acquireManager(root,configDir){
@@ -14,7 +14,7 @@ export function acquireManager(root,configDir){
 }
 export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   const store=settingsStore(configDir);
-  let running,stopped=false,timer,last=-Infinity,snapshot,lastTickWarning=-Infinity;
+  let running,stopped=false,timer,last=-Infinity,snapshot,inventory,lastTickWarning=-Infinity;
   const history=[];
   const makeRecord=(mode,dryRun)=>({time:new Date(clock()).toISOString(),mode,dryRun,files:0,dirs:0,candidates:0,errors:0,sample:[]});
   function remember(record){history.unshift(record);if(history.length>50)history.pop();}
@@ -29,8 +29,24 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
     running=Promise.resolve().then(fn);
     try{return await running;}finally{running=undefined;}
   }
+  async function analyze(){
+    return exclusive(async()=>{
+      inventory=undefined;
+      const rows=await analyzeStorage(root);
+      const totals=rows.reduce((sum,row)=>({files:sum.files+row.files,bytes:sum.bytes+row.bytes,errors:sum.errors+row.errors}),{files:0,bytes:0,errors:0});
+      const summary={id:randomUUID(),time:new Date(clock()).toISOString(),count:rows.length,...totals};
+      inventory={summary,rows};
+      return summary;
+    });
+  }
+  function storagePage({snapshotId,offset}){
+    if(!inventory||inventory.summary.id!==snapshotId)throw new Error("Storage scan changed; analyze again");
+    if(!Number.isSafeInteger(offset)||offset<0)throw new Error("Invalid offset");
+    return {snapshotId,offset,items:inventory.rows.slice(offset,offset+PAGE_SIZE)};
+  }
   async function perform(mode,config,maintenance=false){
     const dryRun=mode==="preview";
+    if(!dryRun)inventory=undefined;
     const record=makeRecord(mode,dryRun);
     const entries=[];
     let bytes=0,legacyCount=0;
@@ -81,6 +97,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       if(!snapshot||!samePolicy(snapshot.policy,saved))throw new Error("Candidate policy changed; save settings and refresh");
       const entries=selectionEntries(snapshot,input);
       const old=snapshot;
+      inventory=undefined;
       const record=makeRecord("manual",false);
       record.candidates=entries.length;
       for(const entry of entries){
@@ -106,10 +123,10 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   }
   if(schedule){timer=setTimeout(tick,0);timer.unref();}
   return {
-    settings:()=>store.read(),save,analyze:()=>analyzeStorage(root),preview:v=>run("preview",v),
+    settings:()=>store.read(),save,analyze,storagePage,preview:v=>run("preview",v),
     candidates:summary,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
     clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},
     history:()=>history.slice(),tick,
-    async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;history.length=0;}
+    async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;inventory=undefined;history.length=0;}
   };
 }
