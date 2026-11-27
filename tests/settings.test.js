@@ -7,12 +7,17 @@ describe("settings",()=>{
   it("rejects invalid values",()=>{
     expect(()=>validate({...defaults,retentionDays:0})).toThrow();
     expect(()=>validate({...defaults,enabled:"false"})).toThrow();
+    expect(()=>validate({...defaults,showIndicator:"true"})).toThrow();
     expect(()=>validate({...defaults,intervalMinutes:1441})).toThrow();
   });
   it("migrates old dry-run policies without activating deletion",()=>{
     expect(migrate({...defaults,enabled:true,dryRun:true})).toEqual(defaults);
     expect(migrate({...defaults,enabled:true,dryRun:false}).enabled).toBe(true);
     expect(()=>migrate({...defaults,dryRun:"false"})).toThrow();
+    const {showIndicator,...old}=defaults;
+    expect(migrate(old).showIndicator).toBe(true);
+    expect(migrate({...old,showIndicator:false}).showIndicator).toBe(false);
+    expect(migrate(old).enabled).toBe(false);
   });
   it("reclaims dead-writer settings debris only",async()=>{
     const dir=await fs.mkdtemp(path.join(os.tmpdir(),"sanitize-settings-debris-"));
@@ -35,7 +40,9 @@ describe("settings",()=>{
       const store=settingsStore(dir);
       expect(await store.read()).toEqual(defaults);
       expect((await store.read()).enabled).toBe(false);
-      await store.write({...defaults,retentionDays:14});
+      expect((await store.read()).showIndicator).toBe(true);
+      await store.write({...defaults,retentionDays:14,showIndicator:false});
+      expect((await settingsStore(dir).read()).showIndicator).toBe(false);
       expect((await settingsStore(dir).read()).retentionDays).toBe(14);
     } finally {await fs.rm(dir,{recursive:true,force:true});}
   });
