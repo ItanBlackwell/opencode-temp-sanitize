@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import {afterEach,beforeEach,describe,it,expect} from "vitest";
 import {analyzeStorage} from "../src/storage-scan.js";
+import {createManager} from "../src/manager.js";
 import {sweepProjects} from "../src/sweep.js";
 
 let sandbox, root;
@@ -88,5 +89,32 @@ describe("complete read-only inventory",()=>{
   });
   it("rejects a missing root instead of reporting a false zero",async()=>{
     await expect(analyzeStorage(path.join(sandbox,"missing"))).rejects.toMatchObject({code:"ENOENT"});
+  });
+});
+
+describe("paged storage inventory",()=>{
+  it("keeps totals independent of page size and releases previous snapshots",async()=>{
+    for(let i=0;i<123;i++)await file("legacy-"+String(i).padStart(3,"0")+"/data.bin",i+1);
+    const manager=createManager(await fs.realpath(root),path.join(sandbox,"config"),{schedule:false});
+    try{
+      const summary=await manager.analyze();
+      expect(summary).toMatchObject({count:124,files:123,bytes:123*124/2,errors:0});
+      expect(manager.storageSummary()).toEqual(summary);
+      const a=manager.storagePage({snapshotId:summary.id,offset:0});
+      const b=manager.storagePage({snapshotId:summary.id,offset:50});
+      const c=manager.storagePage({snapshotId:summary.id,offset:100});
+      expect([a.items.length,b.items.length,c.items.length]).toEqual([50,50,24]);
+      expect(new Set([...a.items,...b.items,...c.items].map(row=>row.name)).size).toBe(124);
+      await file("new-dir/data.bin",100);
+      expect(manager.storageSummary()).toEqual(summary);
+      expect(manager.storagePage({snapshotId:summary.id,offset:100})).toEqual(c);
+      const next=await manager.analyze();
+      expect(next).toMatchObject({count:125,files:124,bytes:summary.bytes+100});
+      expect(()=>manager.storagePage({snapshotId:summary.id,offset:0})).toThrow();
+      expect(()=>manager.storagePage({snapshotId:next.id,offset:-1})).toThrow();
+      await manager.clean({confirmed:true});
+      expect(manager.storageSummary().id).toBe("");
+      expect(()=>manager.storagePage({snapshotId:next.id,offset:0})).toThrow();
+    }finally{await manager.stop();}
   });
 });
