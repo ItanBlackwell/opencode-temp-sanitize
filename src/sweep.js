@@ -52,7 +52,7 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
     const entries = await safe(() => fs.readdir(folder, { withFileTypes: true }), folder);
     if (!entries) return;
     for (const entry of entries) {
-      if (entry.name === "uploads" || entry.name.startsWith(".sanitize-")) continue;
+      if (entry.name.toLowerCase() === "uploads" || entry.name.startsWith(".sanitize-")) continue;
       const target = path.join(folder, entry.name);
       if (entry.isDirectory()) {
         if (!options.flat) await walk(target);
