@@ -26,10 +26,10 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.3.3)
+### Desktop settings (0.3.4)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
-Open Settings > Temporary Files. Save the policy before preview or manual cleanup.
+Open Settings > Temporary Files (localized to the active interface language). Save the policy before preview or manual cleanup. Each of the seven cleanup parameters and the update-mode selector has a native tooltip, accessible on hover or keyboard focus. The GUI declares 63 locales matching OpenCode Desktop's current locale registry, with 36 plugin-specific keys per locale; shared actions use OpenCode's translations. Technical RPC diagnostics, file paths and project names are intentionally not translated. Translations are machine-authored and have not received native-speaker review.
 The server reads the saved policy every 15 seconds. Settings are shared across projects on the same server.
 
 Configuration is stored at:
