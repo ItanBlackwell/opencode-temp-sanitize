@@ -23,10 +23,10 @@ eventually breaks unrelated programs.
 - Sets `TMPDIR`, `TEMP` and `TMP` to the same directory for shell commands the agent runs.
 - Scans inactive project directories on startup and hourly, retaining files accessed or modified within seven days by default. Deletes only when automatic cleanup is enabled or a manual cleanup is confirmed.
 - A process lease protects the entire project while its OpenCode plugin instance is alive. PID reuse can conservatively delay cleanup. This is not a guarantee against concurrent external writers or detached child processes.
-- Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
+- Never follows symlinks during normal traversal; preserves uploads, special files and active lease metadata. Failed deletions are counted in operation summaries and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.3.8)
+### Desktop settings (0.3.9)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
 Open Settings > Temporary Files (localized to the active interface language). Preview uses the current valid settings, including unsaved edits, and never deletes files or writes settings. Save the policy before real manual cleanup. Unsaved previews are not added to shared cleanup history. Each cleanup parameter and the update-mode selector has a native tooltip, accessible on hover or keyboard focus. The GUI declares 63 locales matching OpenCode Desktop's current locale registry, with 54 plugin-specific keys per locale; shared actions use OpenCode's translations. Technical RPC diagnostics, file paths and project names are intentionally not translated. Translations are machine-authored and have not received native-speaker review.
@@ -58,13 +58,23 @@ Extract the ZIP and run Install.cmd. Like Usage Dashboard, files are installed d
 
 Update.cmd downloads stable releases from this fork, verifies SHA-256 and installs immediately. The Desktop settings Updates section offers Notify (default, daily checks), Automatic and Manual modes. Only the already-installed local updater is invoked; the GUI receives status via desktop-main IPC. Cleanup actions are gated on matching server and GUI versions. Uninstall.cmd removes the package from discovery without deleting settings; Rollback.cmd restores the latest saved payload. Existing files are backed up outside the plugins directory and restored if replacement fails. Old pending operations from the deferred installer are cancelled under its original lock. No downloaded installer is executed. The GUI can reload before the server; restart the server if versions differ. Individual replacements are atomic, not an atomic multi-file transaction. Locked files may require retrying after closing OpenCode.
 
+## Plugin-owned data and retention
+
+Automatic user-file cleanup is **off by default**. An existing explicit user choice is preserved. The scheduled scan may reclaim only empty, strictly recognized lease markers whose recorded owner process is confirmed dead, plus abandoned settings writes with a confirmed dead owner. Manual preview remains read-only. Ambiguous PIDs, links, unknown files and unrelated data are preserved.
+
+- One candidate snapshot and at most 50 small operation summaries are kept in RAM, not on disk. The previous snapshot is released before a new scan; memory remains proportional to current eligible file count. Shutdown clears these structures.
+- Settings and update-mode files are replaced atomically; temporary names carry the writer PID. Dead-writer debris is removed during scheduled maintenance, subsequent writes or updater startup.
+- Repeated per-file errors are counted instead of emitted individually. Repeated scheduled-operation failures are logged at most hourly per manager; prompt and RPC warnings are bounded per server process. OpenCode controls retention of its own logs.
+- Successful installation retains the newest two complete recognized rollback payloads. Abandoned recognized installation and pre-commit backup stages are reclaimed under the installation lock; incomplete historical recovery backups and directories containing unexpected files are deliberately preserved. Update downloads use a separate locked workspace and are reclaimed on subsequent update attempts, including after interruption. Atomic swap debris is reclaimed after a successful install.
+- Empty project directories, old temp files without verifiable ownership, and legacy update downloads outside the plugin's dedicated workspace are not removed by maintenance. PID reuse may delay cleanup of orphaned markers. User-created temporary files can still grow while automatic deletion is off; this is intentional.
+
 ## Upstream dependency
 
 The rewrite matches the exact sentence emitted by OpenCode core in
 `packages/core/src/instructions/builtins.ts` (`core/environment`, verified at v2.2.6),
 and assumes the shared directory is `path.join(os.tmpdir(), "opencode")` as in
 `packages/util/src/global-roots.ts`. If upstream changes the wording, the plugin logs
-`[temp-sanitize] tmp hint not found` once per session and models fall back to the shared
+`[temp-sanitize] tmp hint not found` once per server process and models fall back to the shared
 directory. `tests/project-tmp.test.js` pins the sentence.
 
 ## Development
