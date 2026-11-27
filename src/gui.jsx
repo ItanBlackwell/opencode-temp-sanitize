@@ -1,7 +1,22 @@
-import { Plugin, SettingsPage } from "@opencode/plugin/gui";
-import { createSignal, onMount, Show, For } from "solid-js";
+import { Plugin, SettingsPage, Ipc } from "@opencode/plugin/gui";
+import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { Sanitize } from "./rpc.js";
+import { Schema } from "effect";
+import { createUpdater } from "./desktop-updater.js";
+import metadata from "../package.json";
+const UpdateStatus=Schema.Struct({mode:Schema.String,state:Schema.String,version:Schema.NullOr(Schema.String),checkedAt:Schema.Number});
+const Updates=Ipc.define({id:"temp-sanitize.updates.v1",state:UpdateStatus,methods:{
+  get:{output:UpdateStatus},check:{output:UpdateStatus},install:{output:UpdateStatus},
+  setMode:{input:Schema.Struct({mode:Schema.String}),output:UpdateStatus}
+}});
+
 export default Plugin.define({
+  main(ctx){
+    const updater=createUpdater(metadata.version);
+    ctx.provide(Updates,{state:updater.status,get:updater.status,check:updater.check,install:updater.install,setMode:({mode})=>updater.setMode(mode)});
+    updater.start();
+    return ()=>updater.stop();
+  },
   setup(ctx){
     const ui=ctx.ui;
     function Page(){
@@ -12,15 +27,44 @@ export default Plugin.define({
       const [result,setResult]=createSignal();
       const [history,setHistory]=createSignal([]);
       const [confirm,setConfirm]=createSignal(false);
+      const [updates,setUpdates]=createSignal();
+      const [updateBusy,setUpdateBusy]=createSignal(false);
+      async function update(action){
+        if(updateBusy())return;
+        setUpdateBusy(true);
+        try{setUpdates(await action(ctx.main(Updates)));}
+        catch{setUpdates(old=>({...old,mode:old?.mode??"notify",state:"error",version:null}));}
+        finally{setUpdateBusy(false);}
+      }
+      onMount(()=>{
+        const poll=()=>void update(client=>client.get({}));
+        poll();const timer=setInterval(poll,3000);
+        onCleanup(()=>clearInterval(timer));
+      });
       const call=()=>ctx.client.rpc(Sanitize);
-      const run=async(fn)=>{if(busy())return;setBusy(true);setError("");try{await fn();}catch(e){setError(String(e.message??e));}finally{setBusy(false);}};
+      async function compatible(){
+        const response=await call().protocol({});
+        if(response.version!==metadata.version)throw new Error("Restart OpenCode and its background server to synchronize plugin versions.");
+      }
+      const run=async(fn)=>{if(busy())return;setBusy(true);setError("");try{await compatible();await fn();}catch(e){setConfig(undefined);setError(String(e.message??e));}finally{setBusy(false);}};
       const refresh=async()=>{setRows(await call().analyze({}));setHistory(await call().history({}));};
       onMount(()=>run(async()=>{setConfig(await call().settings({}));await refresh();}));
       const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);};
       const numbers=[["retentionDays","Retention (days)"],["intervalMinutes","Interval (minutes)"],["maxBytes","Soft quota (bytes)"],["maxFiles","Soft quota (files)"]];
       const flags=[["enabled","Automatic cleanup"],["dryRun","Dry-run mode"],["legacy","Preview legacy root files"]];
       return <ui.SettingsLayout title="Temporary Files" description="Manage server-side temporary storage. Active projects and uploads are protected.">
-        <Show when={error()}><p role="alert">{error()}</p></Show>
+        <Show when={error()}><p role="alert">{error()} If the server is still running an older version, restart it.</p><ui.Button onClick={()=>run(async()=>{setConfig(await call().settings({}));await refresh();})}>Retry connection</ui.Button></Show>
+        <ui.SettingsSection title="Updates">
+          <ui.SettingsRow title={"Installed version "+metadata.version} description={updates()?.state==="restart"?"Restart OpenCode and its server to activate "+updates()?.version:updates()?.state==="available"?"Available: "+updates()?.version:updates()?.state==="error"?"Update check or installation failed. Retry or use the Portable ZIP.":updates()?.state==="unavailable"?"Use a Windows Portable installation.":updates()?.state??"Checking support…"}>
+            <select aria-label="Update mode" disabled={updateBusy()||!updates()||["unavailable","restart","checking","installing"].includes(updates().state)} value={updates()?.mode??"notify"} onChange={e=>update(client=>client.setMode({mode:e.currentTarget.value}))}>
+              <option value="notify">Notify me</option><option value="auto">Automatic</option><option value="manual">Manual</option>
+            </select>
+            <ui.Button disabled={updateBusy()||!updates()||["unavailable","restart","checking","installing"].includes(updates().state)} onClick={()=>update(client=>client.check({}))}>Check</ui.Button>
+            <Show when={updates()?.version&&["available","error"].includes(updates()?.state)}>
+              <ui.Button disabled={updateBusy()} onClick={()=>update(client=>client.install({}))}>Install update</ui.Button>
+            </Show>
+          </ui.SettingsRow>
+        </ui.SettingsSection>
         <Show when={config()}>
           <ui.SettingsSection title="Cleanup policy">
             <For each={flags}>{([key,label])=><ui.SettingsRow id={key} title={label}><ui.Switch label={label} checked={config()[key]} onChange={value=>change(key,value)}/></ui.SettingsRow>}</For>
