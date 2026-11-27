@@ -14,7 +14,7 @@ export function storedValue(key,value){
 }
 export function validPolicy(policy){
   if(!policy)return false;
-  return ["enabled","legacy"].every(key=>typeof policy[key]==="boolean") &&
+  return ["enabled","legacy","showIndicator"].every(key=>typeof policy[key]==="boolean") &&
     ["retentionDays","intervalMinutes","maxBytes","maxFiles"].every(key=>Number.isSafeInteger(policy[key])&&policy[key]>=1&&policy[key]<=maxValue(key));
 }
 export function summarizeRows(rows){
