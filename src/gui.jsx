@@ -3,6 +3,7 @@ import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid
 import { Sanitize } from "./rpc.js";
 import { Schema } from "effect";
 import { createUpdater } from "./desktop-updater.js";
+import { attachIndicator } from "./sidebar-indicator.js";
 import metadata from "../package.json";
 import { i18n, parameterKeys, helpKeys } from "./i18n.js";
 import { GIB, advancedKeys, labelKeys, maxValue, displayValue, storedValue, validPolicy, formatStorage } from "./compact-view.js";
@@ -29,6 +30,16 @@ export default Plugin.define({
     const label=key=>t(labelKeys[key]??key);
     const help=key=>["enabled","intervalMinutes"].includes(key)?t(helpKeys[key])+" "+t("helpScanOnly"):t(helpKeys[key]);
     const metric=(key,value)=>t(key)+": "+number(value);
+    const [candidateRequest,setCandidateRequest]=createSignal(0);
+    let handledRequest=0;
+    const openCandidates=()=>{setCandidateRequest(n=>n+1);ctx.layout.settings("temporary-files");};
+    const indicator=attachIndicator({
+      read:()=>ctx.client.rpc(Sanitize).indicator({}),
+      open:openCandidates,
+      label:state=>t("candidates")+" · "+metric("fileCount",state.count)+" · "+formatStorage(state.bytes,locale()),
+      signal:ctx.signal,
+    });
+    onCleanup(indicator.dispose);
     function Help(props){
       return <ui.Tooltip placement="top" value={<span style={{"max-width":"280px","white-space":"normal","overflow-wrap":"anywhere",display:"block"}} dir={ctx.locale.direction?.()??"auto"}>{help(props.name)}</span>}>
         <button type="button" aria-label={label(props.name)+": "+help(props.name)}
@@ -56,7 +67,9 @@ export default Plugin.define({
       const [confirm,setConfirm]=createSignal(false);
       const [snapshot,setSnapshot]=createSignal();
       const [page,setPage]=createSignal();
-      const [listOpen,setListOpen]=createSignal(false);
+      const [listOpen,setListOpen]=createSignal(candidateRequest()>handledRequest);
+      const [scrollToCandidates,setScrollToCandidates]=createSignal(false);
+      let candidateAnchor;
       const [selection,setSelection]=createSignal(new Set());
       const [selectionNotice,setSelectionNotice]=createSignal(false);
       let epoch=0,polling=false;
@@ -116,7 +129,7 @@ export default Plugin.define({
       const dirty=()=>!!config()&&!!saved()&&JSON.stringify(config())!==JSON.stringify(saved());
       const valid=()=>validPolicy(config());
       const cancelChanges=()=>{if(busy()||!dirty())return;setConfig({...saved()});setConfirm(false);clearResult();setSelection(new Set());return run(refreshCandidates);};
-      const saveChanges=()=>{if(busy()||!dirty()||!valid())return;return run(async()=>{const policy=await call().save({...config()});if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();await refreshCandidates();}});};
+      const saveChanges=()=>{if(busy()||!dirty()||!valid())return;return run(async()=>{const policy=await call().save({...config()});void indicator.refresh();if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();await refreshCandidates();}});};
       const total=inventory;
       const selectionCount=()=>selection().size;
       const canSelect=()=>!busy()&&!dirty()&&snapshot()?.matchesSaved===true;
@@ -150,6 +163,19 @@ export default Plugin.define({
         clearSelection();setPage(undefined);setSnapshot(next);
         if(listOpen()&&next.id&&next.count)await fetchPage(0,token);
       }
+      createEffect(()=>{
+        const request=candidateRequest();
+        if(request<=handledRequest)return;
+        handledRequest=request;
+        setListOpen(true);setScrollToCandidates(true);
+      });
+      createEffect(()=>{
+        if(!scrollToCandidates()||busy()||!config())return;
+        if(!snapshot()?.id||!snapshot()?.count){setScrollToCandidates(false);return;}
+        if(!page()){setScrollToCandidates(false);void run(async()=>{await fetchPage(0);if(active)candidateAnchor?.scrollIntoView({block:"start",behavior:"auto"});});return;}
+        setScrollToCandidates(false);
+        candidateAnchor?.scrollIntoView({block:"start",behavior:"auto"});
+      });
       async function pollCandidates(){
         if(!active||busy()||dirty()||!config()||polling)return;
         polling=true;
@@ -212,6 +238,7 @@ export default Plugin.define({
         if(mode==="selected"&&(!id||!selectedIds.length||!snapshot()?.matchesSaved))return;
         const record=await (mode==="preview"?call().preview(draft):mode==="selected"?call().cleanSelected({confirmed:true,snapshotId:id,ids:selectedIds}):call().clean({confirmed:true}));
         if(!active)return;
+        void indicator.refresh();
         setResult(record);setPreviewPolicy(draft);clearSelection();setSelectionNotice(false);
         if(!record.dryRun){setInventory(undefined);setInventoryPage(undefined);}
         await refreshHistory();await refreshCandidates();
@@ -271,6 +298,7 @@ export default Plugin.define({
         <Show when={config()} fallback={<Show when={!error()}><ui.Loader/></Show>}>
           <ui.SettingsSection title={t("policy")}>
             <SwitchRow name="enabled"/>
+            <SwitchRow name="showIndicator"/>
             <NumberRow name="retentionDays"/>
           </ui.SettingsSection>
           <ui.SettingsSection title={t("storage")}>
@@ -292,6 +320,7 @@ export default Plugin.define({
             <Show when={latest()&&!latest().dryRun?latest():undefined}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun&&item().mode!=="preview"?" · "+t("previewOnly"):"")} description={date(item().time)+(item()===result()&&previewPolicy()?" · "+label("retentionDays")+": "+number(previewPolicy().retentionDays):"")}>{recordSummary(item())}</ui.SettingsRow>}</Show>
           </ui.SettingsSection>
           <Show when={snapshot()?.id}>
+            <div ref={candidateAnchor} style={{"scroll-margin-block-start":"calc(var(--settings-tab-header-height, 0px) + 24px)"}}>
             <ui.SettingsSection title={t("candidates")}>
               <ui.SettingsRow title={metric("fileCount",snapshot().count)} description={formatStorage(snapshot().bytes,locale())+" · "+label("retentionDays")+": "+number(snapshot().retentionDays)+" · "+date(snapshot().time)+(snapshot().errors?" · "+metric("warnings",snapshot().errors):"")}>
                 <ui.Button size="small" variant="neutral" disabled={busy()} onClick={()=>{const open=!listOpen();setListOpen(open);if(open&&!page()&&snapshot().count)void run(()=>fetchPage(0));}}>{t("details")}</ui.Button>
@@ -330,6 +359,7 @@ export default Plugin.define({
                 </Show>
               </Show>
             </ui.SettingsSection>
+            </div>
           </Show>
           <details open={advanced()} onToggle={e=>{setAdvanced(e.currentTarget.open);if(advanced())openInventory();}} style={{"margin-block":"4px"}}>
             <summary style={{cursor:"pointer","font-weight":"500",padding:"8px 0"}}>{t("advanced")}</summary>
