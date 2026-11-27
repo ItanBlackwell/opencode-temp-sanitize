@@ -38,7 +38,7 @@ describe("compact settings",()=>{
         expect(copy[labelKeys[key]??key]).toBeTruthy();
         expect(copy[helpKeys[key]]).toBeTruthy();
       }
-      for(const key of ["advanced","scan","scanned","details","check","installUpdate","unavailable","fileCount","unsaved","selected","cleanSelected","helpScanOnly","selectPage","selectionChanged"])expect(copy[key]).toBeTruthy();
+      for(const key of ["advanced","scan","scanned","details","check","installUpdate","unavailable","fileCount","unsaved","selected","cleanSelected","helpScanOnly","selectPage","selectionChanged","noRelease"])expect(copy[key]).toBeTruthy();
     }
   });
 });
