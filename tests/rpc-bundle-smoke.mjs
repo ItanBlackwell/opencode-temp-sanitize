@@ -15,8 +15,9 @@ try {
   process.env.XDG_CONFIG_HOME=config;
   await fs.mkdir(path.join(tmp,"opencode"),{recursive:true});
   await fs.mkdir(path.join(config,"opencode-temp-sanitize"),{recursive:true});
-  const policy={enabled:false,retentionDays:7,intervalMinutes:60,maxBytes:2147483648,maxFiles:100000,legacy:false};
-  await fs.writeFile(path.join(config,"opencode-temp-sanitize","settings.json"),JSON.stringify({...policy,enabled:true,dryRun:true}));
+  const policy={enabled:false,showIndicator:true,retentionDays:7,intervalMinutes:60,maxBytes:2147483648,maxFiles:100000,legacy:false};
+  const {showIndicator,...oldPolicy}=policy;
+  await fs.writeFile(path.join(config,"opencode-temp-sanitize","settings.json"),JSON.stringify({...oldPolicy,enabled:true,dryRun:true}));
   const plugin=(await import(pathToFileURL(path.resolve("dist/server.mjs")).href)).default;
   const metadata=JSON.parse(await fs.readFile("package.json","utf8"));
   let handlers, definition;
@@ -99,8 +100,14 @@ try {
   await invoke("preview",{...saved,retentionDays:1});
   const ready=await invoke("candidates",{});
   assert.equal(ready.matchesSaved,true);
+  assert.deepEqual(await invoke("indicator",{}),{visible:true,count:1,bytes:128});
+  await invoke("save",{...saved,retentionDays:1,showIndicator:false});
+  assert.deepEqual(await invoke("indicator",{}),{visible:false,count:0,bytes:0});
+  await invoke("save",{...saved,retentionDays:1});
+  assert.deepEqual(await invoke("indicator",{}),{visible:true,count:1,bytes:128});
   const selected=await invoke("cleanSelected",{confirmed:true,snapshotId:ready.id,ids:[0]});
   assert.equal(selected.files,1);
+  assert.deepEqual(await invoke("indicator",{}),{visible:false,count:0,bytes:0});
   await assert.rejects(fs.stat(candidate),{code:"ENOENT"});
   console.log("Packaged server RPC smoke passed");
 } finally {
