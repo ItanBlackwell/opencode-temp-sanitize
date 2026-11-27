@@ -15,8 +15,8 @@ try {
   process.env.XDG_CONFIG_HOME=config;
   await fs.mkdir(path.join(tmp,"opencode"),{recursive:true});
   await fs.mkdir(path.join(config,"opencode-temp-sanitize"),{recursive:true});
-  const policy={enabled:false,retentionDays:7,intervalMinutes:60,maxBytes:2147483648,maxFiles:100000,legacy:false,dryRun:true};
-  await fs.writeFile(path.join(config,"opencode-temp-sanitize","settings.json"),JSON.stringify(policy));
+  const policy={enabled:false,retentionDays:7,intervalMinutes:60,maxBytes:2147483648,maxFiles:100000,legacy:false};
+  await fs.writeFile(path.join(config,"opencode-temp-sanitize","settings.json"),JSON.stringify({...policy,enabled:true,dryRun:true}));
   const plugin=(await import(pathToFileURL(path.resolve("dist/server.mjs")).href)).default;
   const metadata=JSON.parse(await fs.readFile("package.json","utf8"));
   let handlers, definition;
@@ -43,6 +43,9 @@ try {
   assert.equal(reportedStat.dev,expectedStat.dev);
   assert.equal(reportedStat.ino,expectedStat.ino);
   assert.deepEqual(await invoke("settings",{}),policy);
+  // Let the immediate scan-only scheduled pass finish before other mutations.
+  for(let i=0;i<100&&!(await invoke("candidates",{})).id;i++)await new Promise(resolve=>setTimeout(resolve,20));
+  assert.ok((await invoke("candidates",{})).id);
   assert.deepEqual(await invoke("save",{...policy,retentionDays:8}),{...policy,retentionDays:8});
   const storage=path.join(tmp,"opencode");
   await fs.mkdir(path.join(storage,"uploads","nested"),{recursive:true});
@@ -63,7 +66,7 @@ try {
   const saved={...policy,retentionDays:8};
   const originalSettings=await fs.readFile(path.join(config,"opencode-temp-sanitize","settings.json"),"utf8");
   const historyBefore=await invoke("history",{});
-  const draft=await invoke("preview",{...saved,retentionDays:1,dryRun:false});
+  const draft=await invoke("preview",{...saved,retentionDays:1});
   assert.equal(draft.dryRun,true);
   assert.equal(draft.candidates,1);
   assert.equal(draft.files,0);
@@ -71,15 +74,29 @@ try {
   assert.deepEqual(await invoke("settings",{}),saved);
   assert.equal(await fs.readFile(path.join(config,"opencode-temp-sanitize","settings.json"),"utf8"),originalSettings);
   assert.deepEqual(await invoke("history",{}),historyBefore);
+  const draftSummary=await invoke("candidates",{});
+  assert.equal(draftSummary.matchesSaved,false);
+  const candidatePage=await invoke("candidatePage",{snapshotId:draftSummary.id,offset:0});
+  assert.equal(candidatePage.items.length,1);
+  assert.equal(candidatePage.items[0].bytes,128);
+  const denied=await handlers.cleanSelected({confirmed:true,snapshotId:draftSummary.id,ids:[0]},{error:(type,message,data)=>({type,message,data})});
+  assert.equal(denied.type,"operation_failed");
   const normal=await invoke("preview",saved);
   assert.equal(normal.dryRun,true);
   assert.equal(normal.candidates,0);
   const invalid=await handlers.preview({...saved,retentionDays:0},{error:(type,message,data)=>({type,message,data})});
   assert.equal(invalid.type,"operation_failed");
   const manual=await invoke("clean",{confirmed:true});
-  assert.equal(manual.dryRun,true);
+  assert.equal(manual.dryRun,false);
   assert.equal(manual.candidates,0);
   assert.equal(await fs.stat(candidate).then(s=>s.size),128);
+  await invoke("save",{...saved,retentionDays:1});
+  await invoke("preview",{...saved,retentionDays:1});
+  const ready=await invoke("candidates",{});
+  assert.equal(ready.matchesSaved,true);
+  const selected=await invoke("cleanSelected",{confirmed:true,snapshotId:ready.id,ids:[0]});
+  assert.equal(selected.files,1);
+  await assert.rejects(fs.stat(candidate),{code:"ENOENT"});
   console.log("Packaged server RPC smoke passed");
 } finally {
   await cleanup?.();
