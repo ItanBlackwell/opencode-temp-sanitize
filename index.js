@@ -31,6 +31,8 @@ export default {
     }
     const lease = path.join(projectTmp, ".sanitize-lease-" + process.pid + "-" + randomUUID());
     fs.writeFileSync(lease, "", { flag: "wx" });
+    let release,registration;
+    try {
     await ctx.session.hook("context", (input) => {
       if (rewriteTmpHint(input.system, promptTmp, projectTmp)) return;
       if (promptTmp !== sharedTmp && rewriteTmpHint(input.system, sharedTmp, projectTmp)) return;
@@ -54,9 +56,9 @@ export default {
     const configHome = process.platform === "win32"
       ? (process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"))
       : (process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"));
-    const {manager, release} = acquireManager(sharedTmp, path.join(configHome, "opencode-temp-sanitize"));
-    let registration;
-    try {
+    const acquired = acquireManager(sharedTmp, path.join(configHome, "opencode-temp-sanitize"));
+    const manager=acquired.manager;
+    release=acquired.release;
       const handlers = {
         protocol: () => ({version:metadata.version,root:sharedTmp}),
         settings: () => manager.settings(),
@@ -85,8 +87,7 @@ export default {
       registration = await ctx.rpc.register(Sanitize, asyncHandlers);
       if(!loggedRegistration){loggedRegistration=true;console.info("[temp-sanitize] RPC registered", metadata.version);}
     } catch (error) {
-      await release();
-      fs.rmSync(lease, {force:true});
+      try{await release?.();}finally{fs.rmSync(lease,{force:true});}
       throw error;
     }
     return async () => {
