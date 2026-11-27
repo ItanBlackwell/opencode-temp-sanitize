@@ -64,6 +64,7 @@ export default {
         settings: () => manager.settings(),
         save: input => manager.save(input),
         analyze: () => manager.analyze(),
+        storageSummary: () => manager.storageSummary(),
         storagePage: input => manager.storagePage(input),
         preview: input => manager.preview(input),
         clean: input => manager.clean(input),
