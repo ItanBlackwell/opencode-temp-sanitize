@@ -26,11 +26,11 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.3.4)
+### Desktop settings (0.3.5)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
-Open Settings > Temporary Files (localized to the active interface language). Save the policy before preview or manual cleanup. Each of the seven cleanup parameters and the update-mode selector has a native tooltip, accessible on hover or keyboard focus. The GUI declares 63 locales matching OpenCode Desktop's current locale registry, with 36 plugin-specific keys per locale; shared actions use OpenCode's translations. Technical RPC diagnostics, file paths and project names are intentionally not translated. Translations are machine-authored and have not received native-speaker review.
-The server reads the saved policy every 15 seconds. Settings are shared across projects on the same server.
+Open Settings > Temporary Files (localized to the active interface language). Save the policy before preview or manual cleanup. Each of the seven cleanup parameters and the update-mode selector has a native tooltip, accessible on hover or keyboard focus. The GUI declares 63 locales matching OpenCode Desktop's current locale registry, with 48 plugin-specific keys per locale; shared actions use OpenCode's translations. Technical RPC diagnostics, file paths and project names are intentionally not translated. Translations are machine-authored and have not received native-speaker review.
+The compact page shows automatic cleanup, retention, preview-only mode, storage analysis and cleanup actions. Other controls, per-project statistics and history are collapsed under Advanced; storage is scanned only when Analyze is requested. The size warning is edited in GiB and stored in bytes. Save and Cancel appear only while policy changes are pending. Preview and real cleanup are distinct; real cleanup is hidden in preview-only mode and otherwise requires confirmation. Updates remain accessible in the footer. The server reads the saved policy every 15 seconds. Settings are shared across projects on the same server.
 
 Configuration is stored at:
 - Windows: %LOCALAPPDATA%/opencode-temp-sanitize/settings.json
