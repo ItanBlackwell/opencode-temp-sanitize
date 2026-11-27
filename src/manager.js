@@ -29,14 +29,14 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
     running=Promise.resolve().then(fn);
     try{return await running;}finally{running=undefined;}
   }
-  async function perform(mode,config){
+  async function perform(mode,config,maintenance=false){
     const dryRun=mode==="preview";
     const record=makeRecord(mode,dryRun);
     const entries=[];
     let bytes=0,legacyCount=0;
     const age=config.retentionDays*86400000;
     const now=clock();
-    const options={dryRun,maintenance:true,maxBytes:config.maxBytes,maxFiles:config.maxFiles,report(error,target,stat){
+    const options={dryRun,maintenance,maxBytes:config.maxBytes,maxFiles:config.maxFiles,report(error,target,stat){
       if(error){record.errors++;return;}
       if(!dryRun||!stat)return;
       const relative=path.relative(root,target);
@@ -61,7 +61,8 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       const saved=await store.read();
       const config=mode==="preview"?validate(previewPolicy):saved;
       const actual=mode==="scheduled"?(saved.enabled?"automatic":"preview"):mode;
-      const record=await perform(actual,config);
+      if(mode==="scheduled")await pruneSettingsTemps(configDir).catch(()=>{});
+      const record=await perform(actual,config,mode==="scheduled");
       if(mode!=="preview"||samePolicy(config,saved))remember(record);
       return record;
     });
@@ -98,7 +99,6 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       const config=await store.read();
       if(!running&&clock()-last>=config.intervalMinutes*60000){
         last=clock();
-        await pruneSettingsTemps(configDir).catch(()=>{});
         await run("scheduled");
       }
     }catch(e){if(clock()-lastTickWarning>=3600000){lastTickWarning=clock();console.warn("[temp-sanitize] scheduled operation failed:",e.message);}}
