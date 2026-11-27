@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import {sweepDir, sweepProjects} from "./sweep.js";
 import {analyzeStorage} from "./storage-scan.js";
 import {settingsStore} from "./settings.js";
