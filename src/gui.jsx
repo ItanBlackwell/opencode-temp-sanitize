@@ -48,6 +48,7 @@ export default Plugin.define({
       const [rows,setRows]=createSignal();
       const [scanRoot,setScanRoot]=createSignal("");
       const [result,setResult]=createSignal();
+      const [previewPolicy,setPreviewPolicy]=createSignal();
       const [history,setHistory]=createSignal([]);
       const [confirm,setConfirm]=createSignal(false);
       const [advanced,setAdvanced]=createSignal(advancedKeys.includes(props.target));
@@ -94,11 +95,12 @@ export default Plugin.define({
       const load=async()=>{
         const policy=await call().settings({});
         if(!active)return;
-        setConfig({...policy});setSaved(policy);
+        setConfig({...policy});setSaved(policy);setResult(undefined);setPreviewPolicy(undefined);
         await refreshHistory();
       };
       onMount(()=>run(load));
-      const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);};
+      const clearResult=()=>{setResult(undefined);setPreviewPolicy(undefined);};
+      const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);clearResult();};
       const dirty=()=>!!config()&&!!saved()&&JSON.stringify(config())!==JSON.stringify(saved());
       const valid=()=>validPolicy(config());
       const total=()=>summarizeRows(rows());
@@ -150,9 +152,11 @@ export default Plugin.define({
         </details>;
       }
       async function cleanup(preview){
-        const record=await (preview?call().preview({}):call().clean({confirmed:true}));
+        const draft=preview?{...config()}:undefined;
+        if(preview&&!validPolicy(draft))return;
+        const record=await (preview?call().preview(draft):call().clean({confirmed:true}));
         if(!active)return;
-        setResult(record);setConfirm(false);
+        setResult(record);setPreviewPolicy(draft);setConfirm(false);
         if(!record.dryRun)setRows(undefined);
         await refreshHistory();
       }
@@ -172,8 +176,8 @@ export default Plugin.define({
             <SwitchRow name="dryRun"/>
             <Show when={dirty()&&!advanced()}>
               <ui.SettingsRow title={t("policy")}>
-                <ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);}}>{t("common.cancel")}</ui.Button>
-                <ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button>
+                <ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);clearResult();}}>{t("common.cancel")}</ui.Button>
+                <ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();}})}>{t("common.save")}</ui.Button>
               </ui.SettingsRow>
             </Show>
           </ui.SettingsSection>
@@ -182,7 +186,7 @@ export default Plugin.define({
               <div style={{"padding-inline-start":"12px","flex-shrink":"0"}}><ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button></div>
             </ui.SettingsRow>
             <ui.SettingsRow title={t(saved()?.dryRun?"previewOnly":"manual")}>
-              <ui.Button size="small" variant={saved()?.dryRun?"contrast":"neutral"} disabled={busy()||dirty()} onClick={()=>run(()=>cleanup(true))}>{t("preview")}</ui.Button>
+              <ui.Button size="small" variant={saved()?.dryRun?"contrast":"neutral"} disabled={busy()||!valid()} onClick={()=>run(()=>cleanup(true))}>{t("preview")}</ui.Button>
               <Show when={!saved()?.dryRun}>
                 <ui.Button size="small" variant="danger" disabled={busy()||dirty()} onClick={()=>setConfirm(true)}>{t("clean")}</ui.Button>
               </Show>
@@ -193,7 +197,7 @@ export default Plugin.define({
                 <ui.Button size="small" variant="danger" disabled={busy()} onClick={()=>run(()=>cleanup(false))}>{t("clean")}</ui.Button>
               </ui.SettingsRow>
             </Show>
-            <Show when={latest()}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun?" · "+t("previewOnly"):"")} description={date(item().time)}>{recordSummary(item())}</ui.SettingsRow>}</Show>
+            <Show when={latest()}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun?" · "+t("previewOnly"):"")} description={date(item().time)+(item()===result()&&previewPolicy()?" · "+label("retentionDays")+": "+number(previewPolicy().retentionDays):"")}>{recordSummary(item())}</ui.SettingsRow>}</Show>
           </ui.SettingsSection>
           <details open={advanced()} onToggle={e=>setAdvanced(e.currentTarget.open)} style={{"margin-block":"4px"}}>
             <summary style={{cursor:"pointer","font-weight":"500",padding:"8px 0"}}>{t("advanced")}</summary>
@@ -205,7 +209,7 @@ export default Plugin.define({
               <ui.SettingsRow id="updates" title={<ParameterTitle name="updates"/>}>
                 <ui.Select label={t("updates")} disabled={updateDisabled()} value={updates()?.mode??"notify"} options={[{value:"notify",label:t("notify")},{value:"auto",label:t("automatic")},{value:"manual",label:t("manual")}]} onChange={mode=>update(client=>client.setMode({mode}))}/>
               </ui.SettingsRow>
-              <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);}}>{t("common.cancel")}</ui.Button><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
+              <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);clearResult();}}>{t("common.cancel")}</ui.Button><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
             </ui.SettingsSection>
             <Show when={scanRoot()}>
               <div dir="ltr" style={{"font-size":"12px",color:"var(--text-weak, currentColor)","overflow-wrap":"anywhere","margin-block":"6px"}}>{scanRoot()}</div>
