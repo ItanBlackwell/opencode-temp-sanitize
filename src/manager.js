@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {sweepDir, sweepProjects} from "./sweep.js";
 import {analyzeStorage} from "./storage-scan.js";
-import {settingsStore} from "./settings.js";
+import {settingsStore,validate} from "./settings.js";
 
 const managers = new Map();
 export function acquireManager(root, configDir) {
@@ -21,10 +21,11 @@ function createManager(root, configDir) {
   let running, stopped = false, timer, last = 0;
   const history = [];
   const analyze=()=>analyzeStorage(root);
-  async function run(mode) {
+  async function run(mode, previewPolicy) {
     if (running) throw new Error("Cleanup already running");
     running = (async()=>{
-      const config = await store.read();
+      const saved = await store.read();
+      const config = mode === "preview" ? validate(previewPolicy) : saved;
       const dryRun = mode === "preview" || config.dryRun;
       const record = {time:new Date().toISOString(),mode,dryRun,files:0,dirs:0,candidates:0,errors:0,sample:[]};
       const options = {dryRun,maxBytes:config.maxBytes,maxFiles:config.maxFiles,report(error,target){
@@ -36,7 +37,10 @@ function createManager(root, configDir) {
       record.files=total.files;record.dirs=total.dirs;
       // Never delete unowned root files automatically from a running server.
       if(config.legacy && dryRun) await sweepDir(root,Date.now(),age,{...options,flat:true});
-      history.unshift(record); if(history.length>50)history.pop();
+      // Unsaved simulations are local to the requesting UI, not scheduled-cleanup history.
+      if(mode !== "preview" || JSON.stringify(config) === JSON.stringify(saved)) {
+        history.unshift(record); if(history.length>50)history.pop();
+      }
       return record;
     })();
     try{return await running;}finally{running=undefined;}
@@ -51,5 +55,5 @@ function createManager(root, configDir) {
     finally{if(!stopped){timer=setTimeout(tick,15000);timer.unref();}}
   }
   timer=setTimeout(tick,0);timer.unref();
-  return {settings:()=>store.read(),save:v=>store.write(v),analyze,preview:()=>run("preview"),clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},history:()=>history.slice(),async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});}};
+  return {settings:()=>store.read(),save:v=>store.write(v),analyze,preview:v=>run("preview",v),clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},history:()=>history.slice(),async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});}};
 }
