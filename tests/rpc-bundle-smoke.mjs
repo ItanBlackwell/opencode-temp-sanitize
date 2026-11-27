@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import {realpathSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -33,7 +34,14 @@ try {
     assert.notEqual(result?.type,"operation_failed",name+" failed");
     return result;
   };
-  assert.deepEqual(await invoke("protocol",{}),{version:metadata.version,root:await fs.realpath(path.join(tmp,"opencode"))});
+  const protocol=await invoke("protocol",{});
+  assert.equal(protocol.version,metadata.version);
+  assert.equal(protocol.root,realpathSync.native(path.join(tmp,"opencode")));
+  // Verify actual filesystem identity as well as the native path spelling.
+  const expectedStat=await fs.stat(path.join(tmp,"opencode"),{bigint:true});
+  const reportedStat=await fs.stat(protocol.root,{bigint:true});
+  assert.equal(reportedStat.dev,expectedStat.dev);
+  assert.equal(reportedStat.ino,expectedStat.ino);
   assert.deepEqual(await invoke("settings",{}),policy);
   assert.deepEqual(await invoke("save",{...policy,retentionDays:8}),{...policy,retentionDays:8});
   const storage=path.join(tmp,"opencode");
