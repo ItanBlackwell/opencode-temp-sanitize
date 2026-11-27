@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const root = await fs.mkdtemp(path.join(os.tmpdir(), "sanitize-rpc-smoke-"));
+let cleanup;
+try {
+  const tmp = path.join(root,"tmp");
+  const config = path.join(root,"config");
+  for(const key of ["TMPDIR","TEMP","TMP"]) process.env[key]=tmp;
+  process.env.LOCALAPPDATA=config;
+  process.env.XDG_CONFIG_HOME=config;
+  await fs.mkdir(path.join(tmp,"opencode"),{recursive:true});
+  await fs.mkdir(path.join(config,"opencode-temp-sanitize"),{recursive:true});
+  const policy={enabled:false,retentionDays:7,intervalMinutes:60,maxBytes:2147483648,maxFiles:100000,legacy:false,dryRun:true};
+  await fs.writeFile(path.join(config,"opencode-temp-sanitize","settings.json"),JSON.stringify(policy));
+  const plugin=(await import(pathToFileURL(path.resolve("dist/server.mjs")).href)).default;
+  const metadata=JSON.parse(await fs.readFile("package.json","utf8"));
+  let handlers, definition;
+  cleanup=await plugin.setup({
+    location:{project:{id:"rpc-smoke",directory:root}},
+    session:{hook:async()=>({dispose:async()=>{}})},
+    shell:{hook:async()=>({dispose:async()=>{}})},
+    rpc:{register:async(d,h)=>{definition=d;handlers=h;return {dispose:async()=>{}}}},
+  });
+  assert.equal(definition.id,"temp-sanitize");
+  const invoke=async(name,input)=>{
+    const promise=handlers[name](input,{error:(type,message,data)=>({type,message,data})});
+    assert.equal(typeof promise.then,"function",name+" must return Promise");
+    const result=await promise;
+    assert.notEqual(result?.type,"operation_failed",name+" failed");
+    return result;
+  };
+  assert.deepEqual(await invoke("protocol",{}),{version:metadata.version});
+  assert.deepEqual(await invoke("settings",{}),policy);
+  assert.deepEqual(await invoke("save",{...policy,retentionDays:8}),{...policy,retentionDays:8});
+  assert.ok(Array.isArray(await invoke("analyze",{})));
+  assert.ok(Array.isArray(await invoke("history",{})));
+  assert.equal((await invoke("preview",{})).dryRun,true);
+  assert.equal((await invoke("clean",{confirmed:true})).dryRun,true);
+  console.log("Packaged server RPC smoke passed");
+} finally {
+  await cleanup?.();
+  await fs.rm(root,{recursive:true,force:true});
+}
