@@ -19,7 +19,7 @@ const record = object({
   time:string,mode:{type:"string",enum:["automatic","manual","preview"]},dryRun:boolean,
   files:count,dirs:count,candidates:count,errors:count,sample:array(string),
 });
-const summary = object({id:string,time:string,count,bytes:count,errors:count,legacyCount:count,retentionDays:count});
+const summary = object({id:string,time:string,count,bytes:count,errors:count,legacyCount:count,retentionDays:count,matchesSaved:boolean});
 const candidate = object({id:count,path:string,bytes:count,modifiedAt:string});
 const page = object({snapshotId:string,offset:count,items:{type:"array",items:candidate,maxItems:50}});
 const method = (input, output) => ({input, output, errors:{operation_failed:object({method:string})}});
