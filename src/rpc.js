@@ -27,7 +27,7 @@ export const Sanitize = Rpc.define({
     settings:method(empty,policy),
     save:method(policy,policy),
     analyze:method(empty,array(row)),
-    preview:method(empty,record),
+    preview:method(policy,record),
     clean:method(object({confirmed:{type:"boolean",const:true}}),record),
     history:method(empty,array(record)),
   },
