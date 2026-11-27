@@ -14,7 +14,10 @@ try {
   $asset=@($release.assets | Where-Object {$_.name -eq $name -and $_.state -eq 'uploaded' -and $_.browser_download_url -ceq "$base/$name"})
   $sumAsset=@($release.assets | Where-Object {$_.name -eq 'SHA256SUMS.txt' -and $_.state -eq 'uploaded' -and $_.browser_download_url -ceq "$base/SHA256SUMS.txt"})
   if($asset.Count -ne 1 -or $sumAsset.Count -ne 1 -or $asset[0].size -lt 1 -or $asset[0].size -gt 100MB -or $sumAsset[0].size -lt 1 -or $sumAsset[0].size -gt 64KB){throw 'Invalid release assets'}
-  $tmp=Join-Path ([IO.Path]::GetTempPath()) ('sanitize-update-'+[Guid]::NewGuid().ToString('N'))
+  $store=Get-Store
+  $updateHandle=Lock-UpdateStore $store
+  Trim-DownloadStore $store
+  $tmp=Join-Path $store ('download-'+[Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $tmp | Out-Null
   $zip=Join-Path $tmp $name
   $checks=Join-Path $tmp 'SHA256SUMS.txt'
@@ -42,4 +45,4 @@ try {
   $p=Assert-Identity $tmp
   if($p.version -ne $version){throw 'Version mismatch'}
   Install-Payload $tmp -ExpectedCurrent $current.version
-} catch {Write-Host $_ -ForegroundColor Red;exit 1} finally {if($tmp -and (Test-Path -LiteralPath $tmp)){Remove-Item -LiteralPath $tmp -Recurse -Force}}
+} catch {Write-Host $_ -ForegroundColor Red;exit 1} finally {try{if($tmp){Remove-DownloadWorkspace $tmp}}finally{if($updateHandle){$updateHandle.Dispose()}}}
