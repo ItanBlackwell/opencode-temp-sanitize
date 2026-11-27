@@ -33,9 +33,22 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
       return undefined;
     }
   }
+  // Resolve the sweep root once, before comparing any descendant paths.
+  // Windows TEMP can use an 8.3 alias while realpath returns the long name.
+  const rootStat = await safe(() => fs.lstat(dir), dir);
+  if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) return removed;
+  const canonical = await safe(() => fs.realpath(dir), dir);
+  if (!canonical) return removed;
+  dir = canonical;
+  const inside = (target) => {
+    const relative = path.relative(dir, target);
+    return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+  };
   async function walk(folder, root = false) {
     const stat = await safe(() => fs.lstat(folder), folder);
     if (!stat?.isDirectory() || stat.isSymbolicLink()) return;
+    const real = await safe(() => fs.realpath(folder), folder);
+    if (!real || !inside(real) || path.relative(folder, real) !== "") return;
     const entries = await safe(() => fs.readdir(folder, { withFileTypes: true }), folder);
     if (!entries) return;
     for (const entry of entries) {
@@ -69,8 +82,7 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
           current.mtimeMs !== s.mtimeMs || current.atimeMs !== s.atimeMs ||
           current.size !== s.size || (!current.isFile() && !current.isSymbolicLink())) return;
       const parent = await fs.realpath(path.dirname(target));
-      const relative = path.relative(dir, parent);
-      if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return;
+      if (!inside(parent) || path.relative(path.dirname(target), parent) !== "") return;
       await fs.unlink(target);
       removed.files++;
       bytes -= s.size;
@@ -81,6 +93,10 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
     for (const folder of folders) {
       if (options.guard && await options.guard()) break;
       await safe(async () => {
+        const stat = await fs.lstat(folder);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) return;
+        const real = await fs.realpath(folder);
+        if (!inside(real) || path.relative(folder, real) !== "") return;
         await fs.rmdir(folder);
         removed.dirs++;
       }, folder);
@@ -94,11 +110,19 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
 
 export async function sweepProjects(sharedTmp, now, maxAgeMs = MAX_AGE_MS, options = {}) {
   const total = { files: 0, dirs: 0 };
+  // Canonicalize the shared root, but do not accept a link as the root itself.
+  const rootStat = await fs.lstat(sharedTmp);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return total;
+  sharedTmp = await fs.realpath(sharedTmp);
   const entries = await fs.readdir(sharedTmp, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory() || !isProjectDir(entry.name)) continue;
     const dir = path.join(sharedTmp, entry.name);
     try {
+      const stat = await fs.lstat(dir);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) continue;
+      const real = await fs.realpath(dir);
+      if (path.relative(dir, real) !== "") continue;
       if (await protectedProject(dir)) continue;
       const removed = await sweepDir(dir, now, maxAgeMs, {
         ...options, guard: () => protectedProject(dir),
