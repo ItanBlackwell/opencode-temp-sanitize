@@ -35,6 +35,22 @@ function assertSafe(target){
     const parent=path.dirname(cursor);if(parent===cursor)break;cursor=parent;
   }
 }
+// Reclaim only our abandoned atomic update-mode writes with a dead owner PID.
+export function pruneUpdaterTemps(settings){
+  const directory=path.dirname(settings);
+  assertSafe(directory);
+  let entries;
+  try{entries=fs.readdirSync(directory,{withFileTypes:true});}catch(error){if(error.code==="ENOENT")return;throw error;}
+  for(const entry of entries){
+    const match=/^update-mode\.json\.(\d+)\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/.exec(entry.name);
+    if(!match||!entry.isFile()||entry.isSymbolicLink())continue;
+    const pid=Number(match[1]);
+    if(!Number.isSafeInteger(pid)||pid<=0||pid>2147483647)continue;
+    try{process.kill(pid,0);continue;}catch(error){if(error.code!=="ESRCH")continue;}
+    const target=path.join(directory,entry.name);
+    try{assertSafe(target);if(fs.lstatSync(target).isFile())fs.unlinkSync(target);}catch{}
+  }
+}
 export function createUpdater(current) {
   let mode="notify",state="unavailable",next=null,checkedAt=0,busy=null,timer,stopped=false;
   let root,folder,manifest,script,settings;
@@ -56,6 +72,7 @@ export function createUpdater(current) {
     settings=path.join(root,".temp-sanitize-install","update-mode.json");
     assertSafe(script);assertSafe(path.join(folder,"installer","Common.ps1"));assertSafe(settings);
     if(!fs.lstatSync(script).isFile()||!fs.lstatSync(path.join(folder,"installer","Common.ps1")).isFile())throw new Error("Portable installer required");
+    try{pruneUpdaterTemps(settings);}catch{}
     const v=installed();
     if(v!==current){next=v;state="restart";}
     else{
@@ -106,7 +123,8 @@ export function createUpdater(current) {
     try{
       assertSafe(settings);
       fs.mkdirSync(path.dirname(settings),{recursive:true});
-      const tmp=settings+"."+randomUUID()+".tmp";
+      try{pruneUpdaterTemps(settings);}catch{}
+      const tmp=settings+"."+process.pid+"."+randomUUID()+".tmp";
       try{fs.writeFileSync(tmp,JSON.stringify({mode:value}),{flag:"wx",mode:0o600});fs.renameSync(tmp,settings);}
       finally{if(fs.existsSync(tmp))fs.unlinkSync(tmp);}
       mode=value;
