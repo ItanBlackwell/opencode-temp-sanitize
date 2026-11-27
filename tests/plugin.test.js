@@ -19,11 +19,15 @@ const cleanups = [];
 
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "temp-sanitize-test-")));
-  env = { TMPDIR: process.env.TMPDIR, HOME: process.env.HOME };
+  env = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, LOCALAPPDATA: process.env.LOCALAPPDATA };
   fs.mkdirSync(path.join(root, "tmp", "opencode"), { recursive: true });
   fs.mkdirSync(path.join(root, "home"));
   process.env.TMPDIR = path.join(root, "tmp");
   process.env.HOME = path.join(root, "home");
+  process.env.TEMP = process.env.TMPDIR;
+  process.env.TMP = process.env.TMPDIR;
+  process.env.XDG_CONFIG_HOME = path.join(root, "config");
+  process.env.LOCALAPPDATA = process.env.XDG_CONFIG_HOME;
 });
 
 afterEach(async () => {
@@ -46,6 +50,7 @@ async function load(project) {
     location: { directory: project.directory, project },
     session: { hook: register("session") },
     shell: { hook: register("shell") },
+    rpc: { register: async () => ({ dispose: async () => undefined }) },
   });
   cleanups.push(cleanup);
   return hooks;
@@ -130,7 +135,7 @@ describe("plugin", () => {
 
     await load(project());
 
-    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup")));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup"), expect.stringContaining("boom")));
   });
 
   it("fails setup when OpenCode's tmp directory does not exist", async () => {
