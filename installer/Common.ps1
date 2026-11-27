@@ -70,11 +70,16 @@ function Set-FileAtomic([string]$Source,[string]$Destination) {
   Assert-Safe $Destination
   New-Item -ItemType Directory -Force -Path (Split-Path $Destination)|Out-Null
   $temp=$Destination+'.swap-'+[Guid]::NewGuid().ToString('N')+'.tmp'
+  $swapBackup=$temp+'.bak'
   try {
     Copy-Item -LiteralPath $Source -Destination $temp
-    if(Test-Path -LiteralPath $Destination){[IO.File]::Replace($temp,$Destination,$null)}
+    if(Test-Path -LiteralPath $Destination){[IO.File]::Replace($temp,$Destination,$swapBackup)}
     else{[IO.File]::Move($temp,$Destination)}
-  }finally{if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Force}}
+  }finally{
+    foreach($file in @($temp,$swapBackup)){
+      if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue}
+    }
+  }
 }
 function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
   $store=Get-Store
