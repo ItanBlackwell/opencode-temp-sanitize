@@ -2,6 +2,8 @@ name: Portable release
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths: [".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       tag:
@@ -9,17 +11,45 @@ on:
         required: true
 permissions:
   contents: read
+concurrency:
+  group: portable-release
+  cancel-in-progress: false
 jobs:
   tests:
+    # Ordinary main-branch pushes must never publish a release.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: v')) }}
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      source: ${{ steps.version.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24
+      - name: Validate release version and source
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          tag="v$version"
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$INPUT_TAG" == "$tag" ]] || exit 1
+          elif [[ "$REF_NAME" == main ]]; then
+            [[ "$COMMIT_MESSAGE" == "release: $tag" ]] || exit 1
+          else
+            [[ "$REF_NAME" == "$tag" ]] || exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm install
       - run: npm test
   portable:
@@ -28,11 +58,13 @@ jobs:
     permissions:
       contents: write
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ needs.tests.outputs.tag }}
+      SOURCE_SHA: ${{ needs.tests.outputs.source }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: refs/tags/${{ env.TAG }}
+          ref: ${{ needs.tests.outputs.source }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
@@ -41,14 +73,36 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           if ("v$version" -ne $env:TAG) { throw 'Version mismatch' }
+          if ((git rev-parse HEAD) -ne $env:SOURCE_SHA) { throw 'Source mismatch' }
       - run: npm install
+      - run: npx vitest run tests/desktop-updater.test.js tests/settings.test.js tests/i18n.test.js tests/compact-view.test.js tests/storage-scan.test.js tests/candidates.test.js tests/sidebar-indicator.test.js
       - run: npm run portable
+      - run: node --check dist/server.mjs
+      - run: node --check dist/gui-experimental.cjs
+      - run: node tests/rpc-bundle-smoke.mjs
       - shell: powershell
         run: |
           $zip = Get-ChildItem release/Temp-Sanitize-Portable-*.zip
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath smoke
           & ./tests/installer-smoke.ps1 -PackageRoot (Resolve-Path smoke/Temp-Sanitize).Path
-      - shell: pwsh
+      - name: Publish verified portable release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$env:TAG" --verify-tag --generate-notes (Get-ChildItem release/*.zip).FullName release/SHA256SUMS.txt
+        run: |
+          $zip = @(Get-ChildItem release/Temp-Sanitize-Portable-*.zip)
+          if ($zip.Count -ne 1 -or $zip[0].Name -ne "Temp-Sanitize-Portable-$($env:TAG.Substring(1)).zip") { throw 'Unexpected portable archive' }
+          $expected = (Get-Content release/SHA256SUMS.txt -Raw).Trim()
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip[0].FullName).Hash.ToLowerInvariant() + "  " + $zip[0].Name
+          if ($expected -cne $actual) { throw 'Checksum mismatch' }
+          $releaseArgs = @('release','create',$env:TAG,'--repo',$env:GH_REPO,'--title',"Temp Sanitize $env:TAG",'--draft','--generate-notes')
+          if ($env:GITHUB_REF -eq 'refs/heads/main' -and $env:GITHUB_EVENT_NAME -eq 'push') {
+            $releaseArgs += @('--target',$env:SOURCE_SHA)
+          } else {
+            $releaseArgs += '--verify-tag'
+          }
+          $releaseArgs += @($zip[0].FullName,(Resolve-Path release/SHA256SUMS.txt).Path)
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create draft release with assets' }
+          gh release edit $env:TAG --repo $env:GH_REPO --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release' }
