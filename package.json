@@ -26,7 +26,10 @@
     "opencode-plugin",
     "tmp"
   ],
-  "author": "GFN-CIS",
+  "author": "ItanBlackwell",
+  "contributors": [
+    "GFN-CIS (original project)"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
