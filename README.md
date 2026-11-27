@@ -54,36 +54,26 @@ The GUI bundle must exist at dist/gui-experimental.cjs. The old npm release does
 
 Models treat the hint as advice; nothing prevents them from writing elsewhere.
 
-## Install
+## Windows Portable installation
 
-Add to the `plugins` array in `opencode.json`, pinned to a version:
+Extract the Portable ZIP and run Install.cmd. You do not have to stop OpenCode.
+Install, Update, Uninstall and Rollback prepare a pending operation under
+`<config root>/.temp-sanitize-install` (outside the watched plugins directory).
+A detached local PowerShell worker checks for OpenCode processes and applies the
+operation only when none are detected. No process is killed or restarted.
+If OpenCode is already stopped the operation is applied synchronously.
 
-```json
-{
-  "plugins": ["@gfn-cis/opencode-temp-sanitize@0.3.0"]
-}
-```
+The current installation remains untouched while OpenCode runs. Keep the ZIP
+until activation completes; Apply.cmd retries a pending operation, Rollback.cmd
+queues restoration from the newest backup. The most recently queued operation
+wins. Backups and settings are retained; old staged payloads are not automatically
+removed. A worker interrupted by logoff/reboot must be restarted by running
+Apply.cmd after OpenCode exits. Check activation.log for errors.
 
-or straight from a git tag:
-
-```json
-{
-  "plugins": [
-    "@gfn-cis/opencode-temp-sanitize@git+https://github.com/GFN-CIS/opencode-temp-sanitize.git#v0.3.0"
-  ]
-}
-```
-
-Requires OpenCode 2.
-
-Each tag has a [GitHub Release](https://github.com/GFN-CIS/opencode-temp-sanitize/releases)
-with the `npm pack` tarball, `SHA256SUMS` and a Sigstore build-provenance bundle; CI then
-publishes that same tarball to npm via trusted publishing (OIDC, no tokens). Verify a
-downloaded tarball with:
-
-```sh
-gh attestation verify gfn-cis-opencode-temp-sanitize-<version>.tgz --repo GFN-CIS/opencode-temp-sanitize
-```
+Activation is best effort: process-name detection cannot identify every custom
+server, and there is a small race if OpenCode starts during the directory switch.
+If no idle interval is observed, the operation remains queued. Close a custom
+or remote server manually before activation when applicable.
 
 ## Upstream dependency
 
