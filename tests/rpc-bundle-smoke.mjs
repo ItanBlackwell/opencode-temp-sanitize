@@ -54,9 +54,32 @@ try {
   assert.equal(rows.reduce((sum,row)=>sum+row.bytes,0),13312);
   assert.equal(rows.find(row=>row.name==="uploads")?.protected,true);
   assert.equal(rows.find(row=>row.name==="old-task")?.protected,true);
-  assert.ok(Array.isArray(await invoke("history",{})));
-  assert.equal((await invoke("preview",{})).dryRun,true);
-  assert.equal((await invoke("clean",{confirmed:true})).dryRun,true);
+  // A 3-day-old file qualifies for a 1-day draft, but not the saved 8-day policy.
+  const candidate=path.join(storage,"inactive-1234abcd","candidate.bin");
+  await fs.mkdir(path.dirname(candidate),{recursive:true});
+  await fs.writeFile(candidate,Buffer.alloc(128));
+  const old=new Date(Date.now()-3*86400000);
+  await fs.utimes(candidate,old,old);
+  const saved={...policy,retentionDays:8};
+  const originalSettings=await fs.readFile(path.join(config,"opencode-temp-sanitize","settings.json"),"utf8");
+  const historyBefore=await invoke("history",{});
+  const draft=await invoke("preview",{...saved,retentionDays:1,dryRun:false});
+  assert.equal(draft.dryRun,true);
+  assert.equal(draft.candidates,1);
+  assert.equal(draft.files,0);
+  assert.equal(await fs.stat(candidate).then(s=>s.size),128);
+  assert.deepEqual(await invoke("settings",{}),saved);
+  assert.equal(await fs.readFile(path.join(config,"opencode-temp-sanitize","settings.json"),"utf8"),originalSettings);
+  assert.deepEqual(await invoke("history",{}),historyBefore);
+  const normal=await invoke("preview",saved);
+  assert.equal(normal.dryRun,true);
+  assert.equal(normal.candidates,0);
+  const invalid=await handlers.preview({...saved,retentionDays:0},{error:(type,message,data)=>({type,message,data})});
+  assert.equal(invalid.type,"operation_failed");
+  const manual=await invoke("clean",{confirmed:true});
+  assert.equal(manual.dryRun,true);
+  assert.equal(manual.candidates,0);
+  assert.equal(await fs.stat(candidate).then(s=>s.size),128);
   console.log("Packaged server RPC smoke passed");
 } finally {
   await cleanup?.();
