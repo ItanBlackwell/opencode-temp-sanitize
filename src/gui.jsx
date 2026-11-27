@@ -103,6 +103,8 @@ export default Plugin.define({
       const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);clearResult();};
       const dirty=()=>!!config()&&!!saved()&&JSON.stringify(config())!==JSON.stringify(saved());
       const valid=()=>validPolicy(config());
+      const cancelChanges=()=>{if(busy()||!dirty())return;setConfig({...saved()});setConfirm(false);clearResult();};
+      const saveChanges=()=>{if(busy()||!dirty()||!valid())return;return run(async()=>{const policy=await call().save({...config()});if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();}});};
       const total=()=>summarizeRows(rows());
       const latest=()=>result()??history()[0];
       const updateDisabled=()=>updateBusy()||!updates()||["unavailable","restart","checking","installing"].includes(updates().state);
@@ -161,7 +163,17 @@ export default Plugin.define({
         await refreshHistory();
       }
       const scan=async()=>{setRows(undefined);const data=await call().analyze({});if(active)setRows(data);};
-      return <ui.SettingsLayout title={t("title")} description={t("description")}>
+      return <ui.SettingsLayout title={t("title")} description={t("description")} actions={
+        <Show when={dirty()}>
+          <div style={{display:"flex","flex-direction":"column","align-items":"flex-end",gap:"6px","max-width":"min(240px, 45vw)"}}>
+            <span role="status" aria-live="polite" style={{"font-size":"11px","font-weight":"600",color:"var(--v2-text-text-base, currentColor)","text-align":"end","overflow-wrap":"anywhere"}}>{t("unsaved")}</span>
+            <div role="group" aria-label={t("unsaved")} style={{display:"flex","flex-wrap":"wrap","justify-content":"flex-end","align-items":"center",gap:"8px"}}>
+              <ui.Button size="small" disabled={busy()} onClick={cancelChanges}>{t("common.cancel")}</ui.Button>
+              <ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={saveChanges}>{t("common.save")}</ui.Button>
+            </div>
+          </div>
+        </Show>
+      }>
         <Show when={error()}>
           <div role="alert" style={{display:"flex","flex-wrap":"wrap","align-items":"center",gap:"8px"}}>
             <span>{t("common.requestFailed")}</span>
@@ -174,12 +186,6 @@ export default Plugin.define({
             <SwitchRow name="enabled"/>
             <NumberRow name="retentionDays"/>
             <SwitchRow name="dryRun"/>
-            <Show when={dirty()&&!advanced()}>
-              <ui.SettingsRow title={t("policy")}>
-                <ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);clearResult();}}>{t("common.cancel")}</ui.Button>
-                <ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();}})}>{t("common.save")}</ui.Button>
-              </ui.SettingsRow>
-            </Show>
           </ui.SettingsSection>
           <ui.SettingsSection title={t("storage")}>
             <ui.SettingsRow title={t("scanned")} description={<span style={{"font-variant-numeric":"tabular-nums","overflow-wrap":"anywhere"}}>{total()?formatStorage(total().bytes,locale()):"—"}{total()?.errors?" · "+metric("warnings",total().errors):""}</span>}>
@@ -209,7 +215,6 @@ export default Plugin.define({
               <ui.SettingsRow id="updates" title={<ParameterTitle name="updates"/>}>
                 <ui.Select label={t("updates")} disabled={updateDisabled()} value={updates()?.mode??"notify"} options={[{value:"notify",label:t("notify")},{value:"auto",label:t("automatic")},{value:"manual",label:t("manual")}]} onChange={mode=>update(client=>client.setMode({mode}))}/>
               </ui.SettingsRow>
-              <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);clearResult();}}>{t("common.cancel")}</ui.Button><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);clearResult();}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
             </ui.SettingsSection>
             <Show when={scanRoot()}>
               <div dir="ltr" style={{"font-size":"12px",color:"var(--text-weak, currentColor)","overflow-wrap":"anywhere","margin-block":"6px"}}>{scanRoot()}</div>
