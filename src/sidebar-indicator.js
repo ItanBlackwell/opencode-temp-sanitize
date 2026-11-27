@@ -15,7 +15,7 @@ export function sidebarPortal(doc){
   return Array.from(mount?.children??[]).find(child=>child.classList?.contains("size-full")&&child.classList?.contains("flex-col"))??null;
 }
 function rect(el){
-  if(!el?.isConnected||!el.getClientRects?.().length)return null;
+  if(!el?.isConnected||!el.getClientRects?.().length||typeof el.getBoundingClientRect!=="function")return null;
   const r=el.getBoundingClientRect();
   return r.width>0&&r.height>0&&[r.left,r.right,r.top,r.bottom].every(Number.isFinite)?r:null;
 }
@@ -47,9 +47,10 @@ export function attachIndicator({read,open,label,signal,doc=globalThis.document,
   button.type="button";
   button.style.cssText="box-sizing:border-box;width:32px;height:32px;min-width:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;border-radius:50%;background:transparent;color:var(--v2-text-text-base,currentColor);border:0;padding:0;appearance:none";
   button.appendChild(indicatorGraphic(doc));wrapper.appendChild(button);
-  let state,disposed=false,reading=false,again=false,timer,scheduled,observer;
+  let state,disposed=false,reading=false,again=false,timer,scheduled,observer,geometryObserver;
+  let observedGeometry=[];
   let placementKey="",parent=null;
-  function hide(){wrapper.remove();parent=null;placementKey="";}
+  function hide(){wrapper.remove();parent=null;placementKey="";geometryObserver?.disconnect();observedGeometry=[];}
   function place(target,css,key){
     if(disposed||!state?.visible||!target){hide();return;}
     if(parent!==target||wrapper.parentNode!==target){target.appendChild(wrapper);parent=target;}
@@ -57,15 +58,27 @@ export function attachIndicator({read,open,label,signal,doc=globalThis.document,
     const title=label(state);button.title=title;button.setAttribute("aria-label",title);
   }
   const fixed=(point)=>place(doc.body,"position:fixed;display:flex;align-items:center;justify-content:center;width:32px;height:32px;z-index:34;left:"+point.left+"px;top:"+point.top+"px","fixed:"+point.left+":"+point.top);
+  function observeGeometry(nodes){
+    if(!geometryObserver)return;
+    const next=nodes.filter(Boolean);
+    if(next.length===observedGeometry.length&&next.every((node,i)=>node===observedGeometry[i]))return;
+    geometryObserver.disconnect();observedGeometry=next;
+    for(const node of next)geometryObserver.observe(node,{attributes:true,attributeFilter:["style","class","hidden"]});
+  }
   function layout(){
     scheduled=undefined;
     if(disposed||!state?.visible||signal?.aborted){hide();return;}
     const portal=sidebarPortal(doc);
     if(portal){
-      const frame=rect(portal);
-      if(!frame){hide();return;}
-      const usage=rect(portal.querySelector(USAGE));
-      const native=Array.from(portal.querySelectorAll(FOOTER+" "+UPDATE)).map(rect).filter(Boolean);
+      const portalFrame=rect(portal);
+      if(!portalFrame){hide();return;}
+      const sidebar=doc.querySelector(SIDEBAR),sidebarFrame=rect(sidebar);
+      const frame=sidebarFrame?{left:Math.max(portalFrame.left,sidebarFrame.left),right:Math.min(portalFrame.right,sidebarFrame.right),top:Math.max(portalFrame.top,sidebarFrame.top),bottom:Math.min(portalFrame.bottom,sidebarFrame.bottom)}:portalFrame;
+      const usageNode=portal.querySelector(USAGE);
+      const nativeNodes=Array.from(portal.querySelectorAll(FOOTER+" "+UPDATE));
+      observeGeometry([portal,sidebarFrame?sidebar:null,usageNode,...nativeNodes]);
+      const usage=rect(usageNode);
+      const native=nativeNodes.map(rect).filter(Boolean);
       // If Usage Dashboard docked its updater, reserve the actual occupied space.
       // A later/earlier plugin mount is handled by the next layout sync.
       const anchor=usage??native.at(-1);
@@ -79,7 +92,9 @@ export function attachIndicator({read,open,label,signal,doc=globalThis.document,
     const top=Array.from(doc.querySelectorAll(TOP)).some(el=>!el.closest('[data-slot="mobile-tabs-drawer"]')&&rect(el));
     if(!top){hide();return;}
     const frame={left:0,right:win.innerWidth,top:0,bottom:win.innerHeight};
-    const usage=rect(doc.querySelector(USAGE_WRAPPER+" "+USAGE));
+    const usageNode=doc.querySelector(USAGE_WRAPPER+" "+USAGE);
+    observeGeometry([usageNode]);
+    const usage=rect(usageNode);
     const point=usage?inlinePlacement(frame,usage,[]):{left:16,top:win.innerHeight-48};
     if(point&&point.top>=0&&point.left+32<=frame.right)fixed(point);else hide();
   }
@@ -105,11 +120,12 @@ export function attachIndicator({read,open,label,signal,doc=globalThis.document,
   button.addEventListener("mouseenter",()=>{if(state?.visible){const title=label(state);button.title=title;button.setAttribute("aria-label",title);}});
   win.addEventListener("resize",scheduleLayout);
   if(typeof win.MutationObserver==="function"){
-    observer=new win.MutationObserver(changes=>{if(state?.visible&&(!wrapper.isConnected||changes.some(relevant)))scheduleLayout();});
+    geometryObserver=new win.MutationObserver(()=>scheduleLayout());
+    observer=new win.MutationObserver(changes=>{if(state?.visible&&changes.some(relevant))scheduleLayout();});
     observer.observe(doc.body,{childList:true,subtree:true});
   }
   function dispose(){
-    if(disposed)return;disposed=true;observer?.disconnect();win.removeEventListener("resize",scheduleLayout);
+    if(disposed)return;disposed=true;observer?.disconnect();geometryObserver?.disconnect();win.removeEventListener("resize",scheduleLayout);
     win.clearInterval(timer);if(scheduled!==undefined)win.clearTimeout(scheduled);hide();signal?.removeEventListener("abort",dispose);
   }
   if(signal?.aborted){dispose();return {refresh,dispose};}
