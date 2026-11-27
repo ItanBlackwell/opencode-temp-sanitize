@@ -95,8 +95,8 @@ describe("plugin", () => {
     expect(input.env.TMP).toBe(input.env.TMPDIR);
   });
 
-  it("warns once per session when the hint is missing", async () => {
-    // Upstream rewording must be visible in logs, but not flood them on every request.
+  it("warns once per server process when the hint is missing", async () => {
+    // Upstream rewording must be visible without growing logs or retaining session IDs.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const hooks = await load(project());
     const request = (sessionID) => ({ sessionID, system: [{ type: "text", text: "no hint" }] });
@@ -104,8 +104,11 @@ describe("plugin", () => {
     hooks["session.context"](request("ses_1"));
     hooks["session.context"](request("ses_1"));
     hooks["session.context"](request("ses_2"));
+    const other = await load({ id: "other-project", directory: path.join(root, "home", "projects", "other") });
+    other["session.context"](request("ses_3"));
 
-    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[temp-sanitize] tmp hint not found"));
   });
 
   it("retains stale files of a leased project on setup", async () => {
@@ -126,8 +129,8 @@ describe("plugin", () => {
     expect(fs.existsSync(fresh)).toBe(true);
   });
 
-  it("logs instead of throwing when cleanup fails", async () => {
-    // Cleanup runs from a timer inside the shared OpenCode service; it must not crash it.
+  it("logs instead of throwing when the scheduled operation fails", async () => {
+    // Scheduled scan/cleanup runs inside the shared OpenCode service; it must not crash it.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(fs.promises, "readdir").mockRejectedValue(
       Object.assign(new Error("boom"), { code: "EIO" }),
@@ -135,7 +138,8 @@ describe("plugin", () => {
 
     await load(project());
 
-    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup"), expect.stringContaining("boom")));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith("[temp-sanitize] scheduled operation failed:", "boom"));
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("fails setup when OpenCode's tmp directory does not exist", async () => {
