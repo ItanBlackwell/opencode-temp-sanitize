@@ -168,7 +168,7 @@ export default Plugin.define({
             <SwitchRow name="enabled"/>
             <NumberRow name="retentionDays"/>
             <SwitchRow name="dryRun"/>
-            <Show when={dirty()}>
+            <Show when={dirty()&&!advanced()}>
               <ui.SettingsRow title={t("policy")}>
                 <ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);}}>{t("common.cancel")}</ui.Button>
                 <ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button>
@@ -192,7 +192,7 @@ export default Plugin.define({
                 <ui.Button size="small" variant="danger" disabled={busy()} onClick={()=>run(()=>cleanup(false))}>{t("clean")}</ui.Button>
               </ui.SettingsRow>
             </Show>
-            <Show when={latest()}>{item=><ui.SettingsRow title={item().dryRun?t("previewOnly"):t("clean")} description={date(item().time)}>{recordSummary(item())}</ui.SettingsRow>}</Show>
+            <Show when={latest()}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun?" · "+t("previewOnly"):"")} description={date(item().time)}>{recordSummary(item())}</ui.SettingsRow>}</Show>
           </ui.SettingsSection>
           <details open={advanced()} onToggle={e=>setAdvanced(e.currentTarget.open)} style={{"margin-block":"4px"}}>
             <summary style={{cursor:"pointer","font-weight":"500",padding:"8px 0"}}>{t("advanced")}</summary>
@@ -204,7 +204,7 @@ export default Plugin.define({
               <ui.SettingsRow id="updates" title={<ParameterTitle name="updates"/>}>
                 <ui.Select label={t("updates")} disabled={updateDisabled()} value={updates()?.mode??"notify"} options={[{value:"notify",label:t("notify")},{value:"auto",label:t("automatic")},{value:"manual",label:t("manual")}]} onChange={mode=>update(client=>client.setMode({mode}))}/>
               </ui.SettingsRow>
-              <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
+              <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);}}>{t("common.cancel")}</ui.Button><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
             </ui.SettingsSection>
             <Show when={rows()?.length}>
               <details><summary style={{cursor:"pointer",padding:"8px 0"}}>{t("storage")} · {t("details")}</summary>
