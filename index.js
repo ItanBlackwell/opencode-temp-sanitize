@@ -27,17 +27,17 @@ export default {
     }
     const lease = path.join(projectTmp, ".sanitize-lease-" + process.pid + "-" + randomUUID());
     fs.writeFileSync(lease, "", { flag: "wx" });
-    const warned = new Set();
+    let warned = false;
     await ctx.session.hook("context", (input) => {
       if (rewriteTmpHint(input.system, promptTmp, projectTmp)) return;
       if (promptTmp !== sharedTmp && rewriteTmpHint(input.system, sharedTmp, projectTmp)) return;
-      if (warned.has(input.sessionID)) return;
-      warned.add(input.sessionID);
+      if (warned) return;
+      warned = true;
       // The plugin API exposes no server-side logger; console output reaches the
       // OpenCode log. Not fatal on purpose: a missing hint only means models fall
       // back to the shared directory, which must not break the session.
       console.warn(
-        `[temp-sanitize] tmp hint not found in system prompt (session ${input.sessionID}); ` +
+        `[temp-sanitize] tmp hint not found in system prompt; ` +
           "OpenCode wording may have changed, models will use the shared tmp directory",
       );
     });
@@ -68,11 +68,12 @@ export default {
       };
       // OpenCode's promise adapter invokes Effect.tryPromise: even synchronous
       // handlers must return a Promise, otherwise the host raises rpc.internal.
+      const warnedMethods = new Set();
       const asyncHandlers = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [
         name, async (input, context) => {
           try { return await handler(input); }
           catch (error) {
-            console.warn("[temp-sanitize] RPC " + name + " failed:", error);
+            if(!warnedMethods.has(name)){warnedMethods.add(name);console.warn("[temp-sanitize] RPC " + name + " failed:", error.message);}
             if (context?.error) return context.error("operation_failed", "Temporary Files: " + name + " failed. See server log.", {method:name});
             throw error;
           }
