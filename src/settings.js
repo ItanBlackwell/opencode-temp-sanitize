@@ -16,6 +16,7 @@ export function validate(value) {
 }
 // A previous preview-only installation must never start deleting on upgrade.
 export function migrate(value) {
+  if(value && Object.hasOwn(value,"dryRun") && typeof value.dryRun!=="boolean")throw new Error("Invalid legacy dryRun");
   if(value?.dryRun === true) return validate({...value,enabled:false});
   return validate(value);
 }
