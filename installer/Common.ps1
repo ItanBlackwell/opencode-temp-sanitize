@@ -24,12 +24,9 @@ function Assert-Identity([string]$Dir) {
   return $p
 }
 
-function Test-OpenCodeRunning {
-  return [bool](Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match 'opencode' } | Select-Object -First 1)
-}
+
 function Get-Store {
-  $root=Get-Root
-  $store=Join-Path $root '.temp-sanitize-install'
+  $store=Join-Path (Get-Root) '.temp-sanitize-install'
   Assert-Safe $store
   New-Item -ItemType Directory -Force -Path $store | Out-Null
   return $store
@@ -39,24 +36,22 @@ function Lock-Store([string]$Store) {
   Assert-Safe $lock
   return [IO.File]::Open($lock,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
 }
-function Write-State([string]$Store,$State) {
-  $file=Join-Path $Store 'pending.json'
-  Assert-Safe $file
-  $temp=Join-Path $Store ('state-'+[Guid]::NewGuid().ToString('N')+'.tmp')
-  [IO.File]::WriteAllText($temp,($State|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
-  if(Test-Path -LiteralPath $file){[IO.File]::Replace($temp,$file,$null)}
-  else{[IO.File]::Move($temp,$file)}
+function Cancel-LegacyPending([string]$Store) {
+  # Same lock as the retired activation worker. Never allow its queued payload
+  # to overwrite a successful direct install when OpenCode next exits.
+  $pending=Join-Path $Store 'pending.json'
+  Assert-Safe $pending
+  if(Test-Path -LiteralPath $pending){
+    Move-Item -LiteralPath $pending -Destination (Join-Path $Store ('cancelled-'+[Guid]::NewGuid().ToString('N')+'.json'))
+  }
 }
-function Read-State([string]$Store) {
-  $file=Join-Path $Store 'pending.json'
-  Assert-Safe $file
-  if(Test-Path -LiteralPath $file){return (Get-Content -LiteralPath $file -Raw|ConvertFrom-Json)}
-  return $null
+function Get-PayloadFiles {
+  @('dist\server.mjs','dist\gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','Rollback.cmd','installer\Common.ps1','installer\Install.ps1','installer\Update.ps1','installer\Uninstall.ps1','installer\Rollback.ps1','package.json')
 }
 function Copy-Payload([string]$Source,[string]$Stage) {
   $p=Assert-Identity $Source
   if($p.version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid version'}
-  foreach($file in @('package.json','dist\server.mjs','dist\gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','Rollback.cmd','Apply.cmd','installer\Common.ps1','installer\Install.ps1','installer\Update.ps1','installer\Uninstall.ps1','installer\Rollback.ps1','installer\Apply.ps1')){
+  foreach($file in (Get-PayloadFiles)){
     $src=Join-Path $Source $file
     Assert-Safe $src
     if(!(Test-Path -LiteralPath $src -PathType Leaf)){throw "Missing $file"}
@@ -66,86 +61,98 @@ function Copy-Payload([string]$Source,[string]$Stage) {
   }
   $p.main='./dist/server.mjs'
   $p.exports=[pscustomobject]@{'.'='./dist/server.mjs';'./gui-experimental'='./dist/gui-experimental.cjs'}
-  $p.PSObject.Properties.Remove('dependencies')
-  $p.PSObject.Properties.Remove('devDependencies')
-  $p.PSObject.Properties.Remove('scripts')
+  foreach($key in @('dependencies','devDependencies','scripts')){$p.PSObject.Properties.Remove($key)}
   [IO.File]::WriteAllText((Join-Path $Stage 'package.json'),($p|ConvertTo-Json -Depth 30),[Text.UTF8Encoding]::new($false))
   return $p
 }
-function Invoke-Pending {
+function Set-FileAtomic([string]$Source,[string]$Destination) {
+  Assert-Safe $Source
+  Assert-Safe $Destination
+  New-Item -ItemType Directory -Force -Path (Split-Path $Destination)|Out-Null
+  $temp=$Destination+'.swap-'+[Guid]::NewGuid().ToString('N')+'.tmp'
+  try {
+    Copy-Item -LiteralPath $Source -Destination $temp
+    if(Test-Path -LiteralPath $Destination){[IO.File]::Replace($temp,$Destination,$null)}
+    else{[IO.File]::Move($temp,$Destination)}
+  }finally{if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Force}}
+}
+function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
   $store=Get-Store
   $handle=Lock-Store $store
+  $stage=Join-Path $store ('stage-'+[Guid]::NewGuid().ToString('N'))
   try {
-    $state=Read-State $store
-    if(!$state){return $true}
-    if(Test-OpenCodeRunning){return $false}
-    $root=Get-Root
-    $plugins=Join-Path $root 'plugins'
-    $target=Join-Path $plugins 'opencode-temp-sanitize'
-    foreach($x in @($plugins,$target)){Assert-Safe $x}
-    New-Item -ItemType Directory -Force -Path $plugins | Out-Null
-    $backup=Join-Path $store ('backup-'+[Guid]::NewGuid().ToString('N'))
-    $stage=$null
-    if($state.action -eq 'install'){
-      if($state.stage -notmatch '^version-[a-f0-9]{32}$'){throw 'Invalid staged version'}
-      $stage=Join-Path $store $state.stage
-      $null=Assert-Identity $stage
-      foreach($file in @('dist\server.mjs','dist\gui-experimental.cjs')){
-        $p=Join-Path $stage $file; Assert-Safe $p
-        if(!(Test-Path -LiteralPath $p -PathType Leaf)){throw 'Incomplete staged version'}
-      }
-    }elseif($state.action -ne 'uninstall'){throw 'Unknown pending operation'}
-    if(Test-Path -LiteralPath $target){$null=Assert-Identity $target}
-    if(Test-OpenCodeRunning){return $false}
-    if(Test-Path -LiteralPath $target){Move-Item -LiteralPath $target -Destination $backup}
-    try {if($stage){Move-Item -LiteralPath $stage -Destination $target}}
-    catch {if(Test-Path -LiteralPath $backup){Move-Item -LiteralPath $backup -Destination $target};throw}
-    Remove-Item -LiteralPath (Join-Path $store 'pending.json') -Force
-    Write-Host "Applied $($state.action). Previous version retained in $backup (if present)."
-    return $true
-  }finally{$handle.Dispose()}
-}
-function Start-Activation {
-  if(Invoke-Pending){return}
-  $store=Get-Store
-  # Copy trusted local maintenance code outside the extracted ZIP and watched tree.
-  $worker=Join-Path $store ('worker-'+[Guid]::NewGuid().ToString('N'))
-  New-Item -ItemType Directory -Path $worker | Out-Null
-  foreach($file in @('Common.ps1','Apply.ps1')){
-    $src=Join-Path $PSScriptRoot $file; Assert-Safe $src
-    Copy-Item -LiteralPath $src -Destination (Join-Path $worker $file)
-  }
-  $apply=Join-Path $worker 'Apply.ps1'
-  $null=Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$apply+'"'),'-WaitForExit') -WindowStyle Hidden
-  Write-Host 'Operation queued. OpenCode stays running. Apply.cmd can retry if the worker is interrupted.'
-}
-function Install-Payload([string]$Source) {
-  $store=Get-Store
-  $handle=Lock-Store $store
-  try {
-    $id='version-'+[Guid]::NewGuid().ToString('N')
-    $stage=Join-Path $store $id
     $p=Copy-Payload $Source $stage
-    Write-State $store @{action='install';stage=$id;version=$p.version}
-    Write-Host "Prepared $($p.version)"
-  }finally{$handle.Dispose()}
-  Start-Activation
+    $plugins=Join-Path (Get-Root) 'plugins'
+    $target=Join-Path $plugins 'opencode-temp-sanitize'
+    Assert-Safe $target
+    New-Item -ItemType Directory -Force -Path $plugins|Out-Null
+    if($ExpectedCurrent){
+      $installed=Assert-Identity $target
+      if($installed.version -ne $ExpectedCurrent -or [version]$p.version -le [version]$installed.version){throw 'Installed version changed or update is not newer'}
+    }
+    Cancel-LegacyPending $store
+    if(!(Test-Path -LiteralPath $target)){
+      Move-Item -LiteralPath $stage -Destination $target
+    }else{
+      $null=Assert-Identity $target
+      $backup=Join-Path $store ('backup-'+[Guid]::NewGuid().ToString('N'))
+      $files=@(Get-PayloadFiles)
+      # Back up every affected file before changing anything; unrelated files are untouched.
+      foreach($file in $files){
+        $dest=Join-Path $target $file
+        Assert-Safe $dest
+        if(Test-Path -LiteralPath $dest){
+          if(!(Test-Path -LiteralPath $dest -PathType Leaf)){throw "Not a file: $dest"}
+          $saved=Join-Path $backup $file
+          New-Item -ItemType Directory -Force -Path (Split-Path $saved)|Out-Null
+          Copy-Item -LiteralPath $dest -Destination $saved
+        }
+      }
+      $changed=New-Object 'System.Collections.Generic.List[string]'
+      try {
+        # Commit the manifest last. Each replacement is atomic; the pair is not.
+        foreach($file in $files){
+          Set-FileAtomic (Join-Path $stage $file) (Join-Path $target $file)
+          $changed.Add($file)
+        }
+      }catch{
+        $original=$_
+        $rollbackFailed=$false
+        for($i=$changed.Count-1;$i -ge 0;$i--){
+          $file=$changed[$i];$dest=Join-Path $target $file;$saved=Join-Path $backup $file
+          try{
+            if(Test-Path -LiteralPath $saved){Set-FileAtomic $saved $dest}
+            else{Remove-Item -LiteralPath $dest -Force}
+          }catch{$rollbackFailed=$true;Write-Warning "Restore failed: $file"}
+        }
+        if($rollbackFailed){throw "Install and rollback failed; recover from $backup"}
+        throw $original
+      }
+      Write-Host "Previous files saved at $backup"
+    }
+    Write-Host "Installed $($p.version) at $target. Restart OpenCode to load the new server version. No process was stopped."
+    Write-Host 'If an older explicit plugin reference exists in opencode.json(c), remove it to avoid duplicate loading.'
+  }finally{
+    $handle.Dispose()
+    if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Recurse -Force}
+  }
 }
-function Queue-Uninstall {
-  $store=Get-Store
-  $handle=Lock-Store $store
-  try{Write-State $store @{action='uninstall'}}finally{$handle.Dispose()}
-  Start-Activation
-}
-function Queue-Rollback {
+function Uninstall-Payload {
   $store=Get-Store
   $handle=Lock-Store $store
   try{
-    $backup=Get-ChildItem -LiteralPath $store -Directory -Filter 'backup-*'|Sort-Object LastWriteTime -Descending|Select-Object -First 1
-    if(!$backup){throw 'No previous installation available'}
-    $id='version-'+[Guid]::NewGuid().ToString('N')
-    $p=Copy-Payload $backup.FullName (Join-Path $store $id)
-    Write-State $store @{action='install';stage=$id;version=$p.version}
+    Cancel-LegacyPending $store
+    $target=Join-Path (Get-Root) 'plugins\opencode-temp-sanitize'
+    if(!(Test-Path -LiteralPath $target)){Write-Host 'Not installed';return}
+    $null=Assert-Identity $target
+    $backup=Join-Path $store ('backup-'+[Guid]::NewGuid().ToString('N'))
+    Move-Item -LiteralPath $target -Destination $backup
+    Write-Host "Removed from plugin discovery. Settings preserved. Previous installation: $backup. Restart OpenCode."
   }finally{$handle.Dispose()}
-  Start-Activation
+}
+function Restore-Payload {
+  $store=Get-Store
+  $backup=Get-ChildItem -LiteralPath $store -Directory -Filter 'backup-*'|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+  if(!$backup){throw 'No previous installation available'}
+  Install-Payload $backup.FullName
 }
