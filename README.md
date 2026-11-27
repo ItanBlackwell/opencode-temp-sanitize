@@ -55,7 +55,7 @@ These commands do not stop OpenCode. Close the application and retry if Windows 
 ### Build and install from source
 
 ```sh
-git clone -b safe-cleanup https://github.com/ItanBlackwell/opencode-temp-sanitize.git
+git clone https://github.com/ItanBlackwell/opencode-temp-sanitize.git
 cd opencode-temp-sanitize
 npm install
 npm run build
