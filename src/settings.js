@@ -23,7 +23,7 @@ export function migrate(value) {
 // New atomic writes encode their owner PID; recover only dead-writer files.
 export async function pruneSettingsTemps(directory) {
   let names;
-  try {names=await fs.readdir(directory);} catch(error){if(error.code==="ENOENT")return;throw error;}
+  try {const stat=await fs.lstat(directory);if(!stat.isDirectory()||stat.isSymbolicLink())return;names=await fs.readdir(directory);} catch(error){if(error.code==="ENOENT")return;throw error;}
   for(const name of names){
     const match=/^settings\.json\.(\d+)\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.exec(name);
     if(!match)continue;
