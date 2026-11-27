@@ -17,8 +17,9 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "knip": "knip",
-    "build": "vite build",
-    "prepack": "npm run build"
+    "build": "vite build && node tools/build-server.mjs",
+    "prepack": "npm run build",
+    "portable": "npm run build && python tools/portable.py"
   },
   "keywords": [
     "opencode",
@@ -45,7 +46,8 @@
     "vitest": "^5.1.0",
     "solid-js": "^1.9.0",
     "vite": "^7.0.0",
-    "vite-plugin-solid": "^2.11.0"
+    "vite-plugin-solid": "^2.11.0",
+    "esbuild": "^0.25.0"
   },
   "exports": {
     ".": "./index.js",
@@ -54,5 +56,6 @@
   },
   "dependencies": {
     "@opencode/plugin": "^2.2.0"
-  }
+  },
+  "private": true
 }
