@@ -33,7 +33,7 @@ export default Plugin.define({
     const [candidateRequest,setCandidateRequest]=createSignal(0);
     let handledRequest=0;
     const openCandidates=()=>{setCandidateRequest(n=>n+1);ctx.layout.settings("temporary-files");};
-    const indicator=attachIndicator({
+    const indicator=ctx.app?.platform==="web"?{refresh:()=>{},dispose:()=>{}}:attachIndicator({
       read:()=>ctx.client.rpc(Sanitize).indicator({}),
       open:openCandidates,
       label:state=>t("candidates")+" · "+metric("fileCount",state.count)+" · "+formatStorage(state.bytes,locale()),
@@ -69,7 +69,7 @@ export default Plugin.define({
       const [page,setPage]=createSignal();
       const [listOpen,setListOpen]=createSignal(candidateRequest()>handledRequest);
       const [scrollToCandidates,setScrollToCandidates]=createSignal(false);
-      let candidateAnchor;
+      let candidateAnchor,pendingRequest=0;
       const [selection,setSelection]=createSignal(new Set());
       const [selectionNotice,setSelectionNotice]=createSignal(false);
       let epoch=0,polling=false;
@@ -166,15 +166,23 @@ export default Plugin.define({
       createEffect(()=>{
         const request=candidateRequest();
         if(request<=handledRequest)return;
-        handledRequest=request;
+        pendingRequest=request;
         setListOpen(true);setScrollToCandidates(true);
       });
+      function completeCandidateNavigation(){
+        const request=pendingRequest;
+        queueMicrotask(()=>{
+          if(!active||pendingRequest!==request)return;
+          candidateAnchor?.scrollIntoView({block:"start",behavior:"auto"});
+          handledRequest=Math.max(handledRequest,request);
+        });
+      }
       createEffect(()=>{
         if(!scrollToCandidates()||busy()||!config())return;
-        if(!snapshot()?.id||!snapshot()?.count){setScrollToCandidates(false);return;}
-        if(!page()){setScrollToCandidates(false);void run(async()=>{await fetchPage(0);if(active)candidateAnchor?.scrollIntoView({block:"start",behavior:"auto"});});return;}
         setScrollToCandidates(false);
-        candidateAnchor?.scrollIntoView({block:"start",behavior:"auto"});
+        if(!snapshot()?.id||!snapshot()?.count){completeCandidateNavigation();return;}
+        if(!page()){void run(async()=>{await fetchPage(0);completeCandidateNavigation();});return;}
+        completeCandidateNavigation();
       });
       async function pollCandidates(){
         if(!active||busy()||dirty()||!config()||polling)return;
