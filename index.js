@@ -62,6 +62,9 @@ export default {
         preview: input => manager.preview(input),
         clean: input => manager.clean(input),
         history: () => manager.history(),
+        candidates: () => manager.candidates(),
+        candidatePage: input => manager.candidatePage(input),
+        cleanSelected: input => manager.cleanSelected(input),
       };
       // OpenCode's promise adapter invokes Effect.tryPromise: even synchronous
       // handlers must return a Promise, otherwise the host raises rpc.internal.
