@@ -20,16 +20,25 @@ eventually breaks unrelated programs.
   directory, and asks models to delete files there that they or their subagents created
   once those files are certainly no longer needed. The directory stays inside the
   pre-approved tree, so no new permission prompts.
-- Sets `TMPDIR` to the same directory for shell commands the agent runs.
-- Deletes files older than 48 hours from project directories, on startup and then
-  hourly. "Older" means neither atime nor mtime changed in that time (mtime covers
-  `noatime` mounts). Rules:
-  - only regular files and symlinks are deleted; symlinks are never followed, so their
-    targets are safe; sockets and FIFOs are left alone;
-  - subdirectories are removed once empty; project directories themselves stay;
-  - every project directory in `/tmp/opencode` is swept, so projects that are never
-    reopened get cleaned too; loose files directly in `/tmp/opencode` are not touched,
-    since OpenCode instances without this plugin put them there.
+- Sets `TMPDIR`, `TEMP` and `TMP` to the same directory for shell commands the agent runs.
+- Sweeps inactive project directories on startup and hourly, retaining files accessed or modified within seven days by default.
+- A process lease protects the entire project while its OpenCode plugin instance is alive. PID reuse can conservatively delay cleanup. This is not a guarantee against concurrent external writers or detached child processes.
+- Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
+- Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
+
+### Configuration
+
+Set these environment variables before starting the OpenCode server:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| OPENCODE_SANITIZE_DAYS | 7 | Minimum idle age in days |
+| OPENCODE_SANITIZE_MAX_BYTES | 2147483648 | Soft per-directory byte threshold |
+| OPENCODE_SANITIZE_MAX_FILES | 100000 | Soft per-directory file threshold |
+| OPENCODE_SANITIZE_DRY_RUN | 0 | Set to 1 to report candidates without deleting |
+| OPENCODE_SANITIZE_LEGACY | 0 | Set to 1 to include loose root files |
+
+Legacy mode has no session ownership information. Enable it only with exclusive control of the host and after reviewing dry-run output. It does not recurse into unknown directories or uploads. Windows access timestamps may be disabled; age is therefore not proof that a file is unused. Locked files are skipped; Unix permits unlinking open files, so process leases are the primary protection. A long-lived server may keep projects protected until shutdown. Cleanup is best effort, not a security boundary against malicious concurrent filesystem changes.
 
 Models treat the hint as advice; nothing prevents them from writing elsewhere.
 
