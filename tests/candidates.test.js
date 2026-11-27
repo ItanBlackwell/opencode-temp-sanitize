@@ -25,6 +25,31 @@ async function oldFile(relative,bytes=32){
 }
 const exists=async file=>fs.stat(file).then(()=>true,e=>e.code==="ENOENT"?false:Promise.reject(e));
 describe("scheduled and selective cleanup",()=>{
+  it("shows only saved eligible candidates when the indicator is enabled and auto cleanup is off",async()=>{
+    const hidden={visible:false,count:0,bytes:0};
+    expect(await manager.indicator()).toEqual(hidden);
+    const target=await oldFile("project-1234abcd/indicator.bin",42);
+    await manager.tick();
+    const before=await manager.candidates();
+    expect(await manager.indicator()).toEqual({visible:true,count:1,bytes:42});
+    const policy=await manager.settings();
+    await manager.save({...policy,showIndicator:false});
+    expect(await manager.indicator()).toEqual(hidden);
+    expect((await manager.candidates()).id).toBe(before.id);
+    await manager.save(policy);
+    expect(await manager.indicator()).toEqual({visible:true,count:1,bytes:42});
+    await manager.preview({...policy,retentionDays:2});
+    expect(await manager.indicator()).toEqual(hidden);
+    await manager.preview(policy);
+    const ready=await manager.candidates();
+    await manager.cleanSelected({confirmed:true,snapshotId:ready.id,ids:[0]});
+    expect(await manager.indicator()).toEqual(hidden);
+    expect(await exists(target)).toBe(false);
+    await oldFile("project-1234abcd/next.bin");
+    await manager.save({...policy,enabled:true});
+    await manager.preview({...policy,enabled:true});
+    expect(await manager.indicator()).toEqual(hidden);
+  });
   it("scans on schedule when disabled, never deleting until explicit cleanup or enabled schedule",async()=>{
     const file=await oldFile("project-1234abcd/a.bin");
     await manager.tick();
