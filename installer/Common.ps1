@@ -41,7 +41,7 @@ function Install-Payload([string]$Source) {
   $stage=Join-Path $work ([Guid]::NewGuid().ToString('N'))
   $backup=Join-Path $work ('backup-'+[Guid]::NewGuid().ToString('N'))
   try {
-    foreach($file in @('package.json','dist\server.cjs','dist\gui-experimental.cjs','LICENSE')){
+    foreach($file in @('package.json','dist\server.mjs','dist\gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','installer\Common.ps1','installer\Install.ps1','installer\Update.ps1','installer\Uninstall.ps1')){
       $src=Join-Path $Source $file
       Assert-Safe $src
       if(!(Test-Path -LiteralPath $src -PathType Leaf)){throw "Missing $file"}
@@ -50,10 +50,11 @@ function Install-Payload([string]$Source) {
       Copy-Item -LiteralPath $src -Destination $dst
     }
     $manifest=Join-Path $stage 'package.json'
-    $p.main='./dist/server.cjs'
-    $p.exports=[pscustomobject]@{'.'='./dist/server.cjs';'./gui-experimental'='./dist/gui-experimental.cjs'}
+    $p.main='./dist/server.mjs'
+    $p.exports=[pscustomobject]@{'.'='./dist/server.mjs';'./gui-experimental'='./dist/gui-experimental.cjs'}
     $p.PSObject.Properties.Remove('dependencies')
     $p.PSObject.Properties.Remove('devDependencies')
+    $p.PSObject.Properties.Remove('scripts')
     [IO.File]::WriteAllText($manifest,($p|ConvertTo-Json -Depth 30),[Text.UTF8Encoding]::new($false))
     if(Test-Path -LiteralPath $target){Move-Item -LiteralPath $target -Destination $backup}
     try {Move-Item -LiteralPath $stage -Destination $target}
@@ -62,5 +63,6 @@ function Install-Payload([string]$Source) {
   } finally {
     $handle.Dispose()
     Remove-Item -LiteralPath $lock -Force
+    if(Test-Path -LiteralPath $stage){Assert-Safe $stage; Remove-Item -LiteralPath $stage -Recurse -Force}
   }
 }
