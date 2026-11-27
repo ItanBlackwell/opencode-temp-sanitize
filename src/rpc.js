@@ -32,6 +32,7 @@ export const Sanitize = Rpc.define({
     settings:method(empty,policy),
     save:method(policy,policy),
     analyze:method(empty,inventory),
+    storageSummary:method(empty,inventory),
     storagePage:method(object({snapshotId:string,offset:count}),inventoryPage),
     preview:method(policy,record),
     clean:method(object({confirmed:{type:"boolean",const:true}}),record),
