@@ -19,6 +19,28 @@ export async function protectedProject(dir) {
   return false;
 }
 
+// Remove only empty, plugin-generated lease markers whose owner is conclusively dead.
+// Do not touch live or ambiguous PIDs, nonempty files, links or arbitrary temp data.
+export async function pruneDeadLeases(dir) {
+  let removed=0;
+  for (const name of await fs.readdir(dir)) {
+    const match=/^\.sanitize-lease-(\d+)-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.exec(name);
+    if(!match)continue;
+    const pid=Number(match[1]);
+    if(!Number.isSafeInteger(pid)||pid<=0||pid>2147483647)continue;
+    try{process.kill(pid,0);continue;}catch(error){if(error.code!=="ESRCH")continue;}
+    const target=path.join(dir,name);
+    try{
+      if(path.relative(dir,await fs.realpath(dir))!=="")continue;
+      const s=await fs.lstat(target);
+      if(!s.isFile()||s.isSymbolicLink()||s.size!==0)continue;
+      await fs.unlink(target);
+      removed++;
+    }catch(error){if(error.code!=="ENOENT")throw error;}
+  }
+  return removed;
+}
+
 export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
   const removed = { files: 0, dirs: 0 };
   const candidates = [];
@@ -68,7 +90,7 @@ export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
         }
       }
     }
-    if (!root) folders.push(folder);
+    if (!root && !options.dryRun) folders.push(folder);
   }
   const folders = [];
   await walk(dir, true);
@@ -122,6 +144,9 @@ export async function sweepProjects(sharedTmp, now, maxAgeMs = MAX_AGE_MS, optio
       if (!stat.isDirectory() || stat.isSymbolicLink()) continue;
       const real = await fs.realpath(dir);
       if (path.relative(dir, real) !== "") continue;
+      if(options.maintenance) {
+        try{await pruneDeadLeases(dir);}catch(error){options.report?.(error,dir);}
+      }
       if (await protectedProject(dir)) continue;
       const removed = await sweepDir(dir, now, maxAgeMs, {
         ...options, guard: () => protectedProject(dir),
