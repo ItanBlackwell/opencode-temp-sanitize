@@ -52,7 +52,7 @@ export default {
     let registration;
     try {
       const handlers = {
-        protocol: () => ({version:metadata.version}),
+        protocol: () => ({version:metadata.version,root:sharedTmp}),
         settings: () => manager.settings(),
         save: input => manager.save(input),
         analyze: () => manager.analyze(),
