@@ -24,6 +24,12 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
     return current?{id:current.id,time:current.time,count:current.entries.length,bytes:current.bytes,errors:current.errors,legacyCount:current.legacyCount,retentionDays:current.policy.retentionDays,matchesSaved:samePolicy(current.policy,saved)}:
       {id:"",time:"",count:0,bytes:0,errors:0,legacyCount:0,retentionDays:0,matchesSaved:false};
   }
+  async function indicator(){
+    const saved=await store.read();
+    const current=snapshot;
+    const visible=!!(saved.showIndicator&&!saved.enabled&&current&&samePolicy(current.policy,saved)&&current.entries.length);
+    return {visible,count:visible?current.entries.length:0,bytes:visible?current.bytes:0};
+  }
   async function exclusive(fn){
     if(running)throw new Error("Cleanup already running");
     running=Promise.resolve().then(fn);
@@ -125,7 +131,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   if(schedule){timer=setTimeout(tick,0);timer.unref();}
   return {
     settings:()=>store.read(),save,analyze,storageSummary,storagePage,preview:v=>run("preview",v),
-    candidates:summary,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
+    candidates:summary,indicator,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
     clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},
     history:()=>history.slice(),tick,
     async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;inventory=undefined;history.length=0;}
