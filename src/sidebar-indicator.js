@@ -85,7 +85,8 @@ export function attachIndicator({read,open,label,signal,doc=globalThis.document,
       const point=inlinePlacement(frame,anchor,native);
       if(point){fixed(point);return;}
       // Narrow or collapsed sidebar: own row only; never restyle the other controls.
-      place(portal,"box-sizing:border-box;flex:0 0 auto;min-height:36px;display:flex;align-items:center;justify-content:flex-start;padding:2px 4px;","row");
+      if(frame.right-frame.left<40){hide();return;}
+      place(portal,"box-sizing:border-box;flex:0 0 auto;min-height:36px;display:flex;align-items:center;justify-content:flex-start;padding:2px 4px;"+(usage?"":"margin-top:auto;"),usage?"row":"standalone-row");
       return;
     }
     if(doc.querySelector(SIDEBAR)){hide();return;}
