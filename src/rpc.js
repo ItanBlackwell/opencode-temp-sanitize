@@ -19,16 +19,17 @@ const record = object({
   time:string,mode:{type:"string",enum:["automatic","manual","preview"]},dryRun:boolean,
   files:count,dirs:count,candidates:count,errors:count,sample:array(string),
 });
+const method = (input, output) => ({input, output, errors:{operation_failed:object({method:string})}});
 export const Sanitize = Rpc.define({
   id:"temp-sanitize",
   methods:{
-    protocol:{input:empty,output:object({version:string})},
-    settings:{input:empty,output:policy},
-    save:{input:policy,output:policy},
-    analyze:{input:empty,output:array(row)},
-    preview:{input:empty,output:record},
-    clean:{input:object({confirmed:{type:"boolean",const:true}}),output:record},
-    history:{input:empty,output:array(record)},
+    protocol:method(empty,object({version:string})),
+    settings:method(empty,policy),
+    save:method(policy,policy),
+    analyze:method(empty,array(row)),
+    preview:method(empty,record),
+    clean:method(object({confirmed:{type:"boolean",const:true}}),record),
+    history:method(empty,array(record)),
   },
   events:{},
 });
