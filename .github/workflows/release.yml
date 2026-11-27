@@ -52,7 +52,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm install
-      - run: npm test
+      - name: Run the complete regression suite (including plugin integration)
+        run: npm test
   portable:
     needs: tests
     runs-on: windows-latest
