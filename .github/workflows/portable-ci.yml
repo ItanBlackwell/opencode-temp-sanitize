@@ -22,7 +22,10 @@ jobs:
             if($errors.Count){throw ($errors -join '; ')}
           }
       - run: npm install
+      - run: npx vitest run tests/desktop-updater.test.js tests/settings.test.js
       - run: npm run portable
+      - run: node --check dist/server.mjs
+      - run: node --check dist/gui-experimental.cjs
       - shell: powershell
         run: |
           $zip=Get-ChildItem release/Temp-Sanitize-Portable-*.zip
