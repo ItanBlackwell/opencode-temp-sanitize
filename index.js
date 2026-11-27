@@ -9,6 +9,7 @@ import path from "node:path";
 import { projectSlug, rewriteTmpHint } from "./src/project-tmp.js";
 import { acquireManager } from "./src/manager.js";
 import { Sanitize } from "./src/rpc.js";
+import metadata from "./package.json" with { type: "json" };
 
 export default {
   id: "temp-sanitize",
@@ -51,6 +52,7 @@ export default {
     let registration;
     try {
       if (ctx.rpc?.register) registration = await ctx.rpc.register(Sanitize, {
+        protocol: () => ({version:metadata.version}),
         settings: manager.settings, save: manager.save, analyze: manager.analyze,
         preview: manager.preview, clean: manager.clean, history: manager.history,
       });
