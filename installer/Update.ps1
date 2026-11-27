@@ -22,7 +22,7 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $archive=[IO.Compression.ZipFile]::OpenRead($zip)
   try {
-    foreach($file in @('package.json','dist/server.cjs','dist/gui-experimental.cjs','LICENSE')){
+    foreach($file in @('package.json','dist/server.mjs','dist/gui-experimental.cjs','LICENSE','Install.cmd','Update.cmd','Uninstall.cmd','installer/Common.ps1','installer/Install.ps1','installer/Update.ps1','installer/Uninstall.ps1')){
       $entry=$archive.GetEntry("Temp-Sanitize/$file")
       if(!$entry -or $entry.Length -gt 100MB){throw "Invalid payload: $file"}
       $dest=Join-Path $tmp $file
@@ -33,4 +33,4 @@ try {
   $p=Assert-Identity $tmp
   if($p.version -ne $version){throw 'Version mismatch'}
   Install-Payload $tmp
-} catch {Write-Host $_ -ForegroundColor Red;exit 1}
+} catch {Write-Host $_ -ForegroundColor Red;exit 1} finally {if($tmp -and (Test-Path -LiteralPath $tmp)){Remove-Item -LiteralPath $tmp -Recurse -Force}}
