@@ -19,11 +19,15 @@ const cleanups = [];
 
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "temp-sanitize-test-")));
-  env = { TMPDIR: process.env.TMPDIR, HOME: process.env.HOME };
+  env = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, LOCALAPPDATA: process.env.LOCALAPPDATA };
   fs.mkdirSync(path.join(root, "tmp", "opencode"), { recursive: true });
   fs.mkdirSync(path.join(root, "home"));
   process.env.TMPDIR = path.join(root, "tmp");
   process.env.HOME = path.join(root, "home");
+  process.env.TEMP = process.env.TMPDIR;
+  process.env.TMP = process.env.TMPDIR;
+  process.env.XDG_CONFIG_HOME = path.join(root, "config");
+  process.env.LOCALAPPDATA = process.env.XDG_CONFIG_HOME;
 });
 
 afterEach(async () => {
@@ -46,6 +50,7 @@ async function load(project) {
     location: { directory: project.directory, project },
     session: { hook: register("session") },
     shell: { hook: register("shell") },
+    rpc: { register: async () => ({ dispose: async () => undefined }) },
   });
   cleanups.push(cleanup);
   return hooks;
@@ -86,6 +91,8 @@ describe("plugin", () => {
 
     expect(input.env.TMPDIR).toBe(path.join(shared, fs.readdirSync(shared)[0]));
     expect(input.env.PATH).toBe("/bin");
+    expect(input.env.TEMP).toBe(input.env.TMPDIR);
+    expect(input.env.TMP).toBe(input.env.TMPDIR);
   });
 
   it("warns once per session when the hint is missing", async () => {
@@ -101,7 +108,7 @@ describe("plugin", () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
-  it("deletes stale files of the project on setup", async () => {
+  it("retains stale files of a leased project on setup", async () => {
     const shared = path.join(root, "tmp", "opencode");
     await load(project());
     const own = path.join(shared, fs.readdirSync(shared)[0]);
@@ -109,12 +116,13 @@ describe("plugin", () => {
     const fresh = path.join(own, "new.log");
     fs.writeFileSync(stale, "x");
     fs.writeFileSync(fresh, "x");
-    const old = new Date(Date.now() - 49 * 60 * 60 * 1000);
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     fs.utimesSync(stale, old, old);
 
     await load(project());
 
-    await vi.waitFor(() => expect(fs.existsSync(stale)).toBe(false));
+    await cleanups.pop()();
+    expect(fs.existsSync(stale)).toBe(true);
     expect(fs.existsSync(fresh)).toBe(true);
   });
 
@@ -127,7 +135,7 @@ describe("plugin", () => {
 
     await load(project());
 
-    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup")));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup"), expect.stringContaining("boom")));
   });
 
   it("fails setup when OpenCode's tmp directory does not exist", async () => {
