@@ -17,7 +17,7 @@ describe("compact settings",()=>{
     expect(validPolicy({...defaults,retentionDays:3651})).toBe(false);
     expect(validPolicy({...defaults,intervalMinutes:1441})).toBe(false);
     expect(validPolicy({...defaults,maxBytes:NaN})).toBe(false);
-    expect(validPolicy({...defaults,dryRun:"false"})).toBe(false);
+    expect(validPolicy({...defaults,enabled:"false"})).toBe(false);
     expect(storedValue("retentionDays",1.5)).toBeNaN();
     expect(storedValue("intervalMinutes",1440)).toBe(1440);
   });
@@ -34,11 +34,11 @@ describe("compact settings",()=>{
     expect(advancedKeys).toEqual(["intervalMinutes","maxBytes","maxFiles","legacy","updates"]);
     for(const locale of locales){
       const copy=i18n[locale];
-      for(const key of [...advancedKeys,"enabled","retentionDays","dryRun"]){
+      for(const key of [...advancedKeys,"enabled","retentionDays"]){
         expect(copy[labelKeys[key]??key]).toBeTruthy();
         expect(copy[helpKeys[key]]).toBeTruthy();
       }
-      for(const key of ["advanced","scan","scanned","details","check","installUpdate","unavailable","fileCount","unsaved"])expect(copy[key]).toBeTruthy();
+      for(const key of ["advanced","scan","scanned","details","check","installUpdate","unavailable","fileCount","unsaved","selected","cleanSelected","helpScanOnly","selectPage","selectionChanged"])expect(copy[key]).toBeTruthy();
     }
   });
 });
