@@ -27,7 +27,7 @@ export default Plugin.define({
     const number=value=>new Intl.NumberFormat(locale(),{maximumFractionDigits:1}).format(value);
     const date=value=>new Date(value).toLocaleString(locale());
     const label=key=>t(labelKeys[key]??key);
-    const help=key=>key==="enabled"?t("helpEnabled")+" "+t("helpScanOnly"):t(helpKeys[key]);
+    const help=key=>["enabled","intervalMinutes"].includes(key)?t(helpKeys[key])+" "+t("helpScanOnly"):t(helpKeys[key]);
     const metric=(key,value)=>t(key)+": "+number(value);
     function Help(props){
       return <ui.Tooltip placement="top" value={<span style={{"max-width":"280px","white-space":"normal","overflow-wrap":"anywhere",display:"block"}} dir={ctx.locale.direction?.()??"auto"}>{help(props.name)}</span>}>
@@ -170,7 +170,7 @@ export default Plugin.define({
         return undefined;
       }
       function SwitchRow(props){
-        return <ui.SettingsRow id={props.name} title={<ParameterTitle name={props.name}/>}>
+        return <ui.SettingsRow id={props.name} title={<ParameterTitle name={props.name}/>} description={props.name==="enabled"&&!config().enabled?t("helpScanOnly"):undefined}>
           <ui.Switch label={label(props.name)} hideLabel disabled={busy()} checked={config()[props.name]} onChange={value=>change(props.name,value)}/>
         </ui.SettingsRow>;
       }
@@ -242,7 +242,7 @@ export default Plugin.define({
             <ui.SettingsRow title={t("scanned")} description={<span style={{"font-variant-numeric":"tabular-nums","overflow-wrap":"anywhere"}}>{total()?formatStorage(total().bytes,locale()):"—"}{total()?.errors?" · "+metric("warnings",total().errors):""}</span>}>
               <div style={{"padding-inline-start":"12px","flex-shrink":"0"}}><ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button></div>
             </ui.SettingsRow>
-            <ui.SettingsRow title={t("preview")}>
+            <ui.SettingsRow title={t("policy")}>
               <Actions>
                 <ui.Button size="small" variant="neutral" disabled={busy()||!valid()} onClick={()=>run(()=>cleanup("preview"))}>{t("preview")}</ui.Button>
                 <ui.Button size="small" variant="danger" disabled={busy()||dirty()} onClick={()=>setConfirm("all")}>{t("clean")}</ui.Button>
@@ -254,7 +254,7 @@ export default Plugin.define({
                 <ui.Button size="small" variant="danger" disabled={busy()} onClick={()=>run(()=>cleanup("all"))}>{t("clean")}</ui.Button></Actions>
               </ui.SettingsRow>
             </Show>
-            <Show when={latest()}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun&&item().mode!=="preview"?" · "+t("previewOnly"):"")} description={date(item().time)+(item()===result()&&previewPolicy()?" · "+label("retentionDays")+": "+number(previewPolicy().retentionDays):"")}>{recordSummary(item())}</ui.SettingsRow>}</Show>
+            <Show when={latest()&&!latest().dryRun?latest():undefined}>{item=><ui.SettingsRow title={recordMode(item())+(item().dryRun&&item().mode!=="preview"?" · "+t("previewOnly"):"")} description={date(item().time)+(item()===result()&&previewPolicy()?" · "+label("retentionDays")+": "+number(previewPolicy().retentionDays):"")}>{recordSummary(item())}</ui.SettingsRow>}</Show>
           </ui.SettingsSection>
           <Show when={snapshot()?.id}>
             <ui.SettingsSection title={t("candidates")}>
@@ -286,7 +286,7 @@ export default Plugin.define({
                     </Actions>
                   </div>
                   <div style={{"max-height":"320px","overflow-y":"auto","min-width":"0"}}>
-                    <For each={pageItems()}>{item=><label title={item.path+" · "+date(item.modifiedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0",borderBottom:"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
+                    <For each={pageItems()}>{item=><label title={item.path+" · "+date(item.modifiedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0","border-bottom":"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
                       <input type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={!canSelect()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
                       <span dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px"}}>{item.path}</span>
                       <span style={{"flex-shrink":"0","font-size":"11px","font-variant-numeric":"tabular-nums"}}>{formatStorage(item.bytes,locale())}</span>
