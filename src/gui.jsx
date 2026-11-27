@@ -46,6 +46,7 @@ export default Plugin.define({
       const [busy,setBusy]=createSignal(false);
       const [error,setError]=createSignal("");
       const [rows,setRows]=createSignal();
+      const [scanRoot,setScanRoot]=createSignal("");
       const [result,setResult]=createSignal();
       const [history,setHistory]=createSignal([]);
       const [confirm,setConfirm]=createSignal(false);
@@ -80,6 +81,7 @@ export default Plugin.define({
       async function compatible(){
         const response=await call().protocol({});
         if(response.version!==metadata.version)throw new Error(t("restart"));
+        if(active){if(scanRoot()&&scanRoot()!==response.root)setRows(undefined);setScanRoot(response.root);}
       }
       const run=async(fn)=>{
         if(busy()||!active)return;
@@ -154,7 +156,7 @@ export default Plugin.define({
         if(!record.dryRun)setRows(undefined);
         await refreshHistory();
       }
-      const scan=async()=>{const data=await call().analyze({});if(active)setRows(data);};
+      const scan=async()=>{setRows(undefined);const data=await call().analyze({});if(active)setRows(data);};
       return <ui.SettingsLayout title={t("title")} description={t("description")}>
         <Show when={error()}>
           <div role="alert" style={{display:"flex","flex-wrap":"wrap","align-items":"center",gap:"8px"}}>
@@ -177,8 +179,10 @@ export default Plugin.define({
           </ui.SettingsSection>
           <ui.SettingsSection title={t("storage")}>
             <ui.SettingsRow title={t("scanned")} description={total()?.errors?metric("warnings",total().errors):undefined}>
-              <span style={{"font-variant-numeric":"tabular-nums","white-space":"nowrap"}}>{total()?formatStorage(total().bytes,locale()):"—"}</span>
-              <ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button>
+              <div style={{display:"flex","flex-wrap":"wrap","align-items":"center","justify-content":"flex-end",gap:"12px","min-width":"0","max-width":"100%"}}>
+                <span style={{"font-variant-numeric":"tabular-nums","white-space":"nowrap","flex-shrink":"0"}}>{total()?formatStorage(total().bytes,locale()):"—"}</span>
+                <div style={{"flex-shrink":"0","max-width":"100%"}}><ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button></div>
+              </div>
             </ui.SettingsRow>
             <ui.SettingsRow title={t(saved()?.dryRun?"previewOnly":"manual")}>
               <ui.Button size="small" variant={saved()?.dryRun?"contrast":"neutral"} disabled={busy()||dirty()} onClick={()=>run(()=>cleanup(true))}>{t("preview")}</ui.Button>
@@ -206,10 +210,13 @@ export default Plugin.define({
               </ui.SettingsRow>
               <Show when={dirty()}><ui.SettingsRow title={t("policy")}><ui.Button size="small" disabled={busy()} onClick={()=>{setConfig({...saved()});setConfirm(false);}}>{t("common.cancel")}</ui.Button><ui.Button size="small" variant="contrast" disabled={busy()||!valid()} onClick={()=>run(async()=>{const policy=await call().save(config());if(active){setConfig({...policy});setSaved(policy);setConfirm(false);setResult(undefined);}})}>{t("common.save")}</ui.Button></ui.SettingsRow></Show>
             </ui.SettingsSection>
+            <Show when={scanRoot()}>
+              <div dir="ltr" style={{"font-size":"12px",color:"var(--text-weak, currentColor)","overflow-wrap":"anywhere","margin-block":"6px"}}>{scanRoot()}</div>
+            </Show>
             <Show when={rows()?.length}>
               <details><summary style={{cursor:"pointer",padding:"8px 0"}}>{t("storage")} · {t("details")}</summary>
                 <ui.SettingsSection>
-                  <For each={rows()}>{row=><ui.SettingsRow title={row.name==="Legacy root files"?t("legacy"):row.name} description={rowSummary(row)}>{t(row.protected?"protected":"inactive")}</ui.SettingsRow>}</For>
+                  <For each={rows()}>{row=><ui.SettingsRow title={row.name==="Legacy root files"?"/":row.name} description={rowSummary(row)}>{t(row.protected?"protected":"inactive")}</ui.SettingsRow>}</For>
                 </ui.SettingsSection>
               </details>
             </Show>
