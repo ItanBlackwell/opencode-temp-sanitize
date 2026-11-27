@@ -51,11 +51,30 @@ export default {
     const {manager, release} = acquireManager(sharedTmp, path.join(configHome, "opencode-temp-sanitize"));
     let registration;
     try {
-      if (ctx.rpc?.register) registration = await ctx.rpc.register(Sanitize, {
+      const handlers = {
         protocol: () => ({version:metadata.version}),
-        settings: manager.settings, save: manager.save, analyze: manager.analyze,
-        preview: manager.preview, clean: manager.clean, history: manager.history,
-      });
+        settings: () => manager.settings(),
+        save: input => manager.save(input),
+        analyze: () => manager.analyze(),
+        preview: () => manager.preview(),
+        clean: input => manager.clean(input),
+        history: () => manager.history(),
+      };
+      // OpenCode's promise adapter invokes Effect.tryPromise: even synchronous
+      // handlers must return a Promise, otherwise the host raises rpc.internal.
+      const asyncHandlers = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [
+        name, async (input, context) => {
+          try { return await handler(input); }
+          catch (error) {
+            console.warn("[temp-sanitize] RPC " + name + " failed:", error);
+            if (context?.error) return context.error("operation_failed", "Temporary Files: " + name + " failed. See server log.", {method:name});
+            throw error;
+          }
+        },
+      ]));
+      if (!ctx.rpc?.register) throw new Error("Temp Sanitize requires the OpenCode server RPC API");
+      registration = await ctx.rpc.register(Sanitize, asyncHandlers);
+      console.info("[temp-sanitize] RPC registered", metadata.version);
     } catch (error) {
       await release();
       fs.rmSync(lease, {force:true});
