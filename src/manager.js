@@ -2,7 +2,7 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {sweepDir,sweepProjects} from "./sweep.js";
 import {analyzeStorage} from "./storage-scan.js";
-import {settingsStore,validate} from "./settings.js";
+import {settingsStore,validate,pruneSettingsTemps} from "./settings.js";
 import {candidatePage,selectionEntries,deleteCandidate,identity,samePolicy} from "./candidates.js";
 
 const managers=new Map();
@@ -98,6 +98,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       const config=await store.read();
       if(!running&&clock()-last>=config.intervalMinutes*60000){
         last=clock();
+        await pruneSettingsTemps(configDir).catch(()=>{});
         await run("scheduled");
       }
     }catch(e){if(clock()-lastTickWarning>=3600000){lastTickWarning=clock();console.warn("[temp-sanitize] scheduled operation failed:",e.message);}}
