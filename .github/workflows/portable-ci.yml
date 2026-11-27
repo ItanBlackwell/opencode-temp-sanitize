@@ -26,6 +26,7 @@ jobs:
       - run: npm run portable
       - run: node --check dist/server.mjs
       - run: node --check dist/gui-experimental.cjs
+      - run: node tests/rpc-bundle-smoke.mjs
       - shell: powershell
         run: |
           $zip=Get-ChildItem release/Temp-Sanitize-Portable-*.zip
