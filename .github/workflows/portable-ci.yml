@@ -22,7 +22,7 @@ jobs:
             if($errors.Count){throw ($errors -join '; ')}
           }
       - run: npm install
-      - run: npx vitest run tests/desktop-updater.test.js tests/settings.test.js tests/i18n.test.js tests/compact-view.test.js
+      - run: npx vitest run tests/desktop-updater.test.js tests/settings.test.js tests/i18n.test.js tests/compact-view.test.js tests/storage-scan.test.js
       - run: npm run portable
       - run: node --check dist/server.mjs
       - run: node --check dist/gui-experimental.cjs
