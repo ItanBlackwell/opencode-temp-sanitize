@@ -41,19 +41,28 @@ export default Plugin.define({
         poll();const timer=setInterval(poll,3000);
         onCleanup(()=>clearInterval(timer));
       });
-      const call=()=>ctx.client.rpc(Sanitize);
+      const call=()=> {
+        const rpc=ctx.client.rpc(Sanitize);
+        return Object.fromEntries(Object.keys(Sanitize.methods).map(name=>[name,async (input)=>{
+          try{return await rpc[name](input);}
+          catch(error){
+            const type=error?.type??error?.cause?.type??error?.data?.type;
+            throw new Error(name+": "+String(error?.message??error)+(type?" ["+type+"]":""));
+          }
+        }]));
+      };
       async function compatible(){
         const response=await call().protocol({});
         if(response.version!==metadata.version)throw new Error("Restart OpenCode and its background server to synchronize plugin versions.");
       }
-      const run=async(fn)=>{if(busy())return;setBusy(true);setError("");try{await compatible();await fn();}catch(e){setConfig(undefined);setError(String(e.message??e));}finally{setBusy(false);}};
+      const run=async(fn)=>{if(busy())return;setBusy(true);setError("");try{await compatible();await fn();}catch(e){setError(String(e.message??e));}finally{setBusy(false);}};
       const refresh=async()=>{setRows(await call().analyze({}));setHistory(await call().history({}));};
       onMount(()=>run(async()=>{setConfig(await call().settings({}));await refresh();}));
       const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);};
       const numbers=[["retentionDays","Retention (days)"],["intervalMinutes","Interval (minutes)"],["maxBytes","Soft quota (bytes)"],["maxFiles","Soft quota (files)"]];
       const flags=[["enabled","Automatic cleanup"],["dryRun","Dry-run mode"],["legacy","Preview legacy root files"]];
       return <ui.SettingsLayout title="Temporary Files" description="Manage server-side temporary storage. Active projects and uploads are protected.">
-        <Show when={error()}><p role="alert">{error()} If the server is still running an older version, restart it.</p><ui.Button onClick={()=>run(async()=>{setConfig(await call().settings({}));await refresh();})}>Retry connection</ui.Button></Show>
+        <Show when={error()}><p role="alert">{error()} Check the indicated RPC method and server log.</p><ui.Button onClick={()=>run(async()=>{setConfig(await call().settings({}));await refresh();})}>Retry connection</ui.Button></Show>
         <ui.SettingsSection title="Updates">
           <ui.SettingsRow title={"Installed version "+metadata.version} description={updates()?.state==="restart"?"Restart OpenCode and its server to activate "+updates()?.version:updates()?.state==="available"?"Available: "+updates()?.version:updates()?.state==="error"?"Update check or installation failed. Retry or use the Portable ZIP.":updates()?.state==="unavailable"?"Use a Windows Portable installation.":updates()?.state??"Checking support…"}>
             <select aria-label="Update mode" disabled={updateBusy()||!updates()||["unavailable","restart","checking","installing"].includes(updates().state)} value={updates()?.mode??"notify"} onChange={e=>update(client=>client.setMode({mode:e.currentTarget.value}))}>
