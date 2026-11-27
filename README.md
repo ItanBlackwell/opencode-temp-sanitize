@@ -26,19 +26,31 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Configuration
+### Desktop settings (0.5.0)
 
-Set these environment variables before starting the OpenCode server:
+OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
+Open Settings > Temporary Files. Save the policy before preview or manual cleanup.
+The server reads the saved policy every 15 seconds. Settings are shared across projects on the same server.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| OPENCODE_SANITIZE_DAYS | 7 | Minimum idle age in days |
-| OPENCODE_SANITIZE_MAX_BYTES | 2147483648 | Soft per-directory byte threshold |
-| OPENCODE_SANITIZE_MAX_FILES | 100000 | Soft per-directory file threshold |
-| OPENCODE_SANITIZE_DRY_RUN | 0 | Set to 1 to report candidates without deleting |
-| OPENCODE_SANITIZE_LEGACY | 0 | Set to 1 to include loose root files |
+Configuration is stored at:
+- Windows: %LOCALAPPDATA%/opencode-temp-sanitize/settings.json
+- Linux/macOS: $XDG_CONFIG_HOME/opencode-temp-sanitize/settings.json (or ~/.config/opencode-temp-sanitize/settings.json)
 
-Legacy mode has no session ownership information. Enable it only with exclusive control of the host and after reviewing dry-run output. It does not recurse into unknown directories or uploads. Windows access timestamps may be disabled; age is therefore not proof that a file is unused. Locked files are skipped; Unix permits unlinking open files, so process leases are the primary protection. A long-lived server may keep projects protected until shutdown. Cleanup is best effort, not a security boundary against malicious concurrent filesystem changes.
+Defaults: enabled, seven days, hourly, soft 2 GiB / 100000 files per inactive project,
+dry-run enabled, legacy preview disabled. Legacy files are preview-only because ownership
+cannot be established while the server is running. The old environment variables are no
+longer used. History contains up to 50 runs in memory and resets on server restart.
+Storage scans include protected projects but cleanup excludes them. Preview samples up to
+100 paths; counts cover the whole scan. Quotas warn rather than force eviction.
+
+Build locally before installing from a directory:
+```sh
+npm install
+npm run build
+npm test
+```
+Add the absolute local repository directory to the global opencode.json plugins array.
+The GUI bundle must exist at dist/gui-experimental.cjs. The old npm release does not contain this GUI.
 
 Models treat the hint as advice; nothing prevents them from writing elsewhere.
 
