@@ -26,7 +26,7 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.5.1)
+### Desktop settings (0.3.2)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
 Open Settings > Temporary Files. Save the policy before preview or manual cleanup.
