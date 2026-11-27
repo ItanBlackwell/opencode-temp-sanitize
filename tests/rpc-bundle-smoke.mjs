@@ -53,7 +53,11 @@ try {
   await fs.writeFile(path.join(storage,"uploads","nested","a.bin"),Buffer.alloc(4096));
   await fs.writeFile(path.join(storage,"old-task","nested","b.bin"),Buffer.alloc(8192));
   await fs.writeFile(path.join(storage,"root.bin"),Buffer.alloc(1024));
-  const rows=await invoke("analyze",{});
+  const overview=await invoke("analyze",{});
+  assert.equal(overview.bytes,13312);
+  assert.equal(overview.files,3);
+  assert.deepEqual(await invoke("storageSummary",{}),overview);
+  const {items:rows}=await invoke("storagePage",{snapshotId:overview.id,offset:0});
   assert.equal(rows.reduce((sum,row)=>sum+row.bytes,0),13312);
   assert.equal(rows.find(row=>row.name==="uploads")?.protected,true);
   assert.equal(rows.find(row=>row.name==="old-task")?.protected,true);
@@ -87,6 +91,7 @@ try {
   const invalid=await handlers.preview({...saved,retentionDays:0},{error:(type,message,data)=>({type,message,data})});
   assert.equal(invalid.type,"operation_failed");
   const manual=await invoke("clean",{confirmed:true});
+  assert.equal((await invoke("storageSummary",{})).id,"");
   assert.equal(manual.dryRun,false);
   assert.equal(manual.candidates,0);
   assert.equal(await fs.stat(candidate).then(s=>s.size),128);
