@@ -81,7 +81,7 @@ function Trim-InstallStore([string]$Store,[switch]$Backups) {
   foreach($item in (Get-ChildItem -LiteralPath $Store -Force)){
     try{
       if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){continue}
-      if($item.PSIsContainer -and $item.Name -cmatch '^stage-[0-9a-f]{32}$'){
+      if($item.PSIsContainer -and $item.Name -cmatch '^(stage|backup-stage)-[0-9a-f]{32}$'){
         $null=Remove-OwnedTree $item.FullName $files
       }elseif(!$item.PSIsContainer -and $item.Name -cmatch '^cancelled-[0-9a-f]{32}\.json$'){
         Remove-Item -LiteralPath $item.FullName -Force
@@ -179,6 +179,7 @@ function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
   $store=Get-Store
   $handle=Lock-Store $store
   $stage=Join-Path $store ('stage-'+[Guid]::NewGuid().ToString('N'))
+  $backupStage=$null
   try {
     Trim-InstallStore $store
     $p=Copy-Payload $Source $stage
@@ -195,7 +196,9 @@ function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
       Move-Item -LiteralPath $stage -Destination $target
     }else{
       $null=Assert-Identity $target
-      $backup=Join-Path $store ('backup-'+[Guid]::NewGuid().ToString('N'))
+      $backupId=[Guid]::NewGuid().ToString('N')
+      $backup=Join-Path $store ('backup-'+$backupId)
+      $backupStage=Join-Path $store ('backup-stage-'+$backupId)
       $files=@(Get-PayloadFiles)
       # Back up every affected file before changing anything; unrelated files are untouched.
       foreach($file in $files){
@@ -203,11 +206,14 @@ function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
         Assert-Safe $dest
         if(Test-Path -LiteralPath $dest){
           if(!(Test-Path -LiteralPath $dest -PathType Leaf)){throw "Not a file: $dest"}
-          $saved=Join-Path $backup $file
+          $saved=Join-Path $backupStage $file
           New-Item -ItemType Directory -Force -Path (Split-Path $saved)|Out-Null
           Copy-Item -LiteralPath $dest -Destination $saved
         }
       }
+      # Publish backup only when all affected files have been copied; an
+      # interrupted backup-stage is never needed to repair the target.
+      Move-Item -LiteralPath $backupStage -Destination $backup
       $changed=New-Object 'System.Collections.Generic.List[string]'
       try {
         # Commit the manifest last. Each replacement is atomic; the pair is not.
@@ -234,7 +240,11 @@ function Install-Payload([string]$Source,[string]$ExpectedCurrent='') {
     Write-Host "Installed $($p.version) at $target. Restart OpenCode to load the new server version. No process was stopped."
     Write-Host 'If an older explicit plugin reference exists in opencode.json(c), remove it to avoid duplicate loading.'
   }finally{
-    try{if(Test-Path -LiteralPath $stage){$null=Remove-OwnedTree $stage @(Get-PayloadFiles)}}finally{$handle.Dispose()}
+    try{
+      foreach($workspace in @($stage,$backupStage)){
+        if($workspace -and (Test-Path -LiteralPath $workspace)){$null=Remove-OwnedTree $workspace @(Get-PayloadFiles)}
+      }
+    }finally{$handle.Dispose()}
   }
 }
 function Uninstall-Payload {
