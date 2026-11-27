@@ -1,91 +1,113 @@
-/**
- * Age-based cleanup of project temporary directories.
- *
- * A file is stale when neither its atime nor its mtime moved within `maxAgeMs`.
- * mtime is a fallback for `noatime` mounts, where atime never advances.
- * Only regular files and symlinks are deleted; symlinks are removed themselves and never
- * followed, so a link into the user's tree cannot cause damage outside the tmp directory.
- * Sockets and FIFOs are left alone, since they may belong to a live process.
- * Directories are not judged by age: the scan itself refreshes their atime. They are
- * removed bottom-up once empty, except the directory a sweep starts from.
- */
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const MAX_AGE_MS = 48 * 60 * 60 * 1000;
+export const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const isProjectDir = (name) => /^(global|.+-[0-9a-f]{8})$/.test(name);
 
-const PROJECT_DIR = /^(global|.+-[0-9a-f]{8})$/;
-
-/** Whether a top-level entry name of the shared directory is a project directory. */
-export function isProjectDir(name) {
-  return PROJECT_DIR.test(name);
+// A live process protects its entire project, including idle sessions.
+export async function protectedProject(dir) {
+  for (const name of await fs.readdir(dir)) {
+    if (!/^\.sanitize-lease-\d+-[a-f0-9-]+$/.test(name)) continue;
+    const pid = Number(name.split("-")[2]);
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      if (error.code !== "ESRCH") return true;
+    }
+  }
+  return false;
 }
 
-function isMissing(error) {
-  return error.code === "ENOENT";
-}
-
-/**
- * Deletes stale files under `dir` and prunes emptied subdirectories.
- * Entries that vanish concurrently (ENOENT) are skipped; other errors propagate.
- *
- * @returns {Promise<{files: number, dirs: number}>} counts of removed entries
- */
-export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS) {
+export async function sweepDir(dir, now, maxAgeMs = MAX_AGE_MS, options = {}) {
   const removed = { files: 0, dirs: 0 };
-  await walk(dir, now - maxAgeMs, removed, true);
+  const candidates = [];
+  let bytes = 0;
+  let count = 0;
+  const report = options.report ?? (() => {});
+  async function safe(action, target) {
+    try {
+      return await action();
+    } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") report(error, target);
+      return undefined;
+    }
+  }
+  async function walk(folder, root = false) {
+    const stat = await safe(() => fs.lstat(folder), folder);
+    if (!stat?.isDirectory() || stat.isSymbolicLink()) return;
+    const entries = await safe(() => fs.readdir(folder, { withFileTypes: true }), folder);
+    if (!entries) return;
+    for (const entry of entries) {
+      if (entry.name === "uploads" || entry.name.startsWith(".sanitize-")) continue;
+      const target = path.join(folder, entry.name);
+      if (entry.isDirectory()) {
+        if (!options.flat) await walk(target);
+      } else {
+        const s = await safe(() => fs.lstat(target), target);
+        if (!s || (!s.isFile() && !s.isSymbolicLink())) continue;
+        count++;
+        bytes += s.size;
+        const age = now - Math.max(s.atimeMs, s.mtimeMs);
+        if (age > maxAgeMs) candidates.push({ target, s, age });
+      }
+    }
+    if (!root) folders.push(folder);
+  }
+  const folders = [];
+  await walk(dir, true);
+  candidates.sort((a, b) => b.age - a.age);
+  for (const { target, s } of candidates) {
+    if (options.guard && await options.guard()) break;
+    if (options.dryRun) {
+      report(null, target);
+      continue;
+    }
+    await safe(async () => {
+      const current = await fs.lstat(target);
+      if (current.ino !== s.ino || current.dev !== s.dev ||
+          current.mtimeMs !== s.mtimeMs || current.atimeMs !== s.atimeMs ||
+          current.size !== s.size || (!current.isFile() && !current.isSymbolicLink())) return;
+      const parent = await fs.realpath(path.dirname(target));
+      const relative = path.relative(dir, parent);
+      if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return;
+      await fs.unlink(target);
+      removed.files++;
+      bytes -= s.size;
+      count--;
+    }, target);
+  }
+  if (!options.dryRun) {
+    for (const folder of folders) {
+      if (options.guard && await options.guard()) break;
+      await safe(async () => {
+        await fs.rmdir(folder);
+        removed.dirs++;
+      }, folder);
+    }
+  }
+  if (bytes > (options.maxBytes ?? Infinity) || count > (options.maxFiles ?? Infinity)) {
+    report(new Error("Soft quota exceeded: " + bytes + " bytes, " + count + " files; protected/recent files retained"), dir);
+  }
   return removed;
 }
 
-async function walk(dir, cutoff, removed, isRoot) {
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    if (isMissing(error)) return;
-    throw error;
-  }
-  for (const entry of entries) {
-    const target = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walk(target, cutoff, removed, false);
-    } else if (entry.isFile() || entry.isSymbolicLink()) {
-      await removeIfStale(target, cutoff, removed);
-    }
-  }
-  if (isRoot) return;
-  try {
-    await fs.rmdir(dir);
-    removed.dirs += 1;
-  } catch (error) {
-    if (!isMissing(error) && error.code !== "ENOTEMPTY") throw error;
-  }
-}
-
-async function removeIfStale(file, cutoff, removed) {
-  try {
-    const stat = await fs.lstat(file);
-    if (Math.max(stat.atimeMs, stat.mtimeMs) >= cutoff) return;
-    await fs.unlink(file);
-    removed.files += 1;
-  } catch (error) {
-    if (!isMissing(error)) throw error;
-  }
-}
-
-/**
- * Sweeps every project directory directly under `sharedTmp`. Loose entries in
- * `sharedTmp` itself are left alone: they belong to OpenCode instances without this
- * plugin, and their owners decide what to keep.
- */
-export async function sweepProjects(sharedTmp, now, maxAgeMs = MAX_AGE_MS) {
+export async function sweepProjects(sharedTmp, now, maxAgeMs = MAX_AGE_MS, options = {}) {
   const total = { files: 0, dirs: 0 };
   const entries = await fs.readdir(sharedTmp, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory() || !isProjectDir(entry.name)) continue;
-    const removed = await sweepDir(path.join(sharedTmp, entry.name), now, maxAgeMs);
-    total.files += removed.files;
-    total.dirs += removed.dirs;
+    const dir = path.join(sharedTmp, entry.name);
+    try {
+      if (await protectedProject(dir)) continue;
+      const removed = await sweepDir(dir, now, maxAgeMs, {
+        ...options, guard: () => protectedProject(dir),
+      });
+      total.files += removed.files;
+      total.dirs += removed.dirs;
+    } catch (error) {
+      options.report?.(error, dir);
+    }
   }
   return total;
 }
