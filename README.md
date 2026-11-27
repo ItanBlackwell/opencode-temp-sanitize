@@ -26,7 +26,7 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.5.0)
+### Desktop settings (0.5.1)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
 Open Settings > Temporary Files. Save the policy before preview or manual cleanup.
@@ -56,24 +56,9 @@ Models treat the hint as advice; nothing prevents them from writing elsewhere.
 
 ## Windows Portable installation
 
-Extract the Portable ZIP and run Install.cmd. You do not have to stop OpenCode.
-Install, Update, Uninstall and Rollback prepare a pending operation under
-`<config root>/.temp-sanitize-install` (outside the watched plugins directory).
-A detached local PowerShell worker checks for OpenCode processes and applies the
-operation only when none are detected. No process is killed or restarted.
-If OpenCode is already stopped the operation is applied synchronously.
+Extract the ZIP and run Install.cmd. Like Usage Dashboard, files are installed directly under the global OpenCode plugins directory, honoring OPENCODE_CONFIG_DIR. No process detection, worker or waiting is involved. Restart OpenCode (including its server if needed) to load the new server part. If an old explicit plugin entry exists in opencode.json(c), remove it to avoid duplicates.
 
-The current installation remains untouched while OpenCode runs. Keep the ZIP
-until activation completes; Apply.cmd retries a pending operation, Rollback.cmd
-queues restoration from the newest backup. The most recently queued operation
-wins. Backups and settings are retained; old staged payloads are not automatically
-removed. A worker interrupted by logoff/reboot must be restarted by running
-Apply.cmd after OpenCode exits. Check activation.log for errors.
-
-Activation is best effort: process-name detection cannot identify every custom
-server, and there is a small race if OpenCode starts during the directory switch.
-If no idle interval is observed, the operation remains queued. Close a custom
-or remote server manually before activation when applicable.
+Update.cmd downloads stable releases from this fork, verifies SHA-256 and installs immediately. Uninstall.cmd removes the package from discovery without deleting settings; Rollback.cmd restores the latest saved payload. Existing files are backed up outside the plugins directory and restored if replacement fails. Old pending operations from the deferred installer are cancelled under its original lock. No downloaded installer is executed. The GUI can reload before the server; restart the server if versions differ. Individual replacements are atomic, not an atomic multi-file transaction. Locked files may require retrying after closing OpenCode.
 
 ## Upstream dependency
 
