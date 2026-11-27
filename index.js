@@ -59,7 +59,7 @@ export default {
         settings: () => manager.settings(),
         save: input => manager.save(input),
         analyze: () => manager.analyze(),
-        preview: () => manager.preview(),
+        preview: input => manager.preview(input),
         clean: input => manager.clean(input),
         history: () => manager.history(),
       };
