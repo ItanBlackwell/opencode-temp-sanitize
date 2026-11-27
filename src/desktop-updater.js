@@ -5,7 +5,8 @@ import os from "node:os";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
-const API = "https://api.github.com/repos/ItanBlackwell/opencode-temp-sanitize/releases/latest";
+const RELEASES = "https://api.github.com/repos/ItanBlackwell/opencode-temp-sanitize/releases";
+const API = RELEASES + "/latest";
 const REPO = "https://github.com/ItanBlackwell/opencode-temp-sanitize/releases/download/";
 const modes = ["notify", "auto", "manual"];
 const DAY = 86400000;
@@ -26,6 +27,34 @@ export function selectRelease(data,current) {
     if(found.length!==1||!Number.isSafeInteger(found[0].size)||found[0].size<1||found[0].size>100*1024*1024)throw new Error("Missing or invalid release assets");
   }
   return next;
+}
+// A public repository with no published releases returns 404 from /latest.
+// Confirm the repository's release collection is reachable before treating that as normal.
+function updateError(code){return Object.assign(new Error(code),{updateCode:code});}
+async function releaseResponse(url,fetcher){
+  try{return await fetcher(url,{redirect:"error",credentials:"omit",signal:AbortSignal.timeout(20000),headers:{"User-Agent":"Temp-Sanitize-Updater","Accept":"application/vnd.github+json"}});}
+  catch(error){throw updateError(error?.name==="TimeoutError"||error?.name==="AbortError"?"TIMEOUT":"NETWORK");}
+}
+async function releaseJson(response){
+  let raw;
+  try{raw=await response.text();}catch{throw updateError("NETWORK");}
+  if(raw.length>1024*1024)throw updateError("INVALID_RESPONSE");
+  try{return JSON.parse(raw);}catch{throw updateError("INVALID_RESPONSE");}
+}
+export async function checkRelease(current,fetcher=fetch){
+  const response=await releaseResponse(API,fetcher);
+  if(response.status===404){
+    const listing=await releaseResponse(RELEASES+"?per_page=1",fetcher);
+    if(!listing.ok)throw updateError("HTTP "+listing.status);
+    if(!Array.isArray(await releaseJson(listing)))throw updateError("INVALID_RESPONSE");
+    return {state:"noRelease",version:null};
+  }
+  if(!response.ok)throw updateError("HTTP "+response.status);
+  const data=await releaseJson(response);
+  if(!data||typeof data!=="object"||data.draft!==false||data.prerelease!==false||typeof data.tag_name!=="string"||!data.tag_name.startsWith("v")||!version(data.tag_name.slice(1)))throw updateError("INVALID_RELEASE");
+  let next;
+  try{next=selectRelease(data,current);}catch{throw updateError("INVALID_ASSETS");}
+  return {state:next?"available":"current",version:next};
 }
 function assertSafe(target){
   let cursor=path.resolve(target);
@@ -52,9 +81,9 @@ export function pruneUpdaterTemps(settings){
   }
 }
 export function createUpdater(current) {
-  let mode="notify",state="unavailable",next=null,checkedAt=0,busy=null,timer,stopped=false;
+  let mode="notify",state="unavailable",next=null,checkedAt=0,busy=null,timer,stopped=false,errorCode=null;
   let root,folder,manifest,script,settings;
-  const status=()=>({mode,state,version:next,checkedAt});
+  const status=()=>({mode,state,version:next,checkedAt,errorCode});
   function installed(){
     assertSafe(manifest);
     const p=JSON.parse(fs.readFileSync(manifest,"utf8"));
@@ -79,11 +108,12 @@ export function createUpdater(current) {
       try{const saved=JSON.parse(fs.readFileSync(settings,"utf8"));if(modes.includes(saved.mode))mode=saved.mode;}catch(e){if(e.code!=="ENOENT")throw e;}
       state="idle";
     }
-  }catch{state="unavailable";}
+  }catch{state="unavailable";errorCode="INSTALL_LOCATION";}
   function run(task){
     if(stopped||state==="unavailable"||state==="restart")return Promise.resolve(status());
     if(busy)return busy.then(status);
-    busy=Promise.resolve().then(task).catch(()=>{state="error";}).finally(()=>{busy=null;});
+    errorCode=null;
+    busy=Promise.resolve().then(task).catch(error=>{errorCode=error?.updateCode??(state==="installing"?"INSTALL_FAILED":"UPDATE_FAILED");state="error";}).finally(()=>{busy=null;});
     return busy.then(status);
   }
   async function install(){
@@ -109,11 +139,8 @@ export function createUpdater(current) {
       if(installed()!==current){next=installed();state="restart";return;}
       state="checking";next=null;
       try{
-        const response=await fetch(API,{redirect:"error",credentials:"omit",signal:AbortSignal.timeout(20000),headers:{"User-Agent":"Temp-Sanitize-Updater","Accept":"application/vnd.github+json"}});
-        if(!response.ok)throw new Error("Release check failed");
-        const raw=await response.text();if(raw.length>1024*1024)throw new Error("Invalid release response");
-        next=selectRelease(JSON.parse(raw),current);
-        state=next?"available":"current";
+        const result=await checkRelease(current);
+        next=result.version;state=result.state;
         if(next&&mode==="auto")await install();
       }finally{checkedAt=Date.now();}
     });
@@ -128,7 +155,7 @@ export function createUpdater(current) {
       try{fs.writeFileSync(tmp,JSON.stringify({mode:value}),{flag:"wx",mode:0o600});fs.renameSync(tmp,settings);}
       finally{if(fs.existsSync(tmp))fs.unlinkSync(tmp);}
       mode=value;
-    }catch{state="error";return Promise.resolve(status());}
+    }catch{state="error";errorCode="SETTINGS_WRITE";return Promise.resolve(status());}
     if(mode==="auto"&&next)return run(install);
     if(mode!=="manual"&&!checkedAt)return check();
     return Promise.resolve(status());
