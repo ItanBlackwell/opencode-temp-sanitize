@@ -18,9 +18,11 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   const history=[];
   const makeRecord=(mode,dryRun)=>({time:new Date(clock()).toISOString(),mode,dryRun,files:0,dirs:0,candidates:0,errors:0,sample:[]});
   function remember(record){history.unshift(record);if(history.length>50)history.pop();}
-  function summary(){
-    return snapshot?{id:snapshot.id,time:snapshot.time,count:snapshot.entries.length,bytes:snapshot.bytes,errors:snapshot.errors,legacyCount:snapshot.legacyCount,retentionDays:snapshot.policy.retentionDays}:
-      {id:"",time:"",count:0,bytes:0,errors:0,legacyCount:0,retentionDays:0};
+  async function summary(){
+    const saved=await store.read();
+    const current=snapshot;
+    return current?{id:current.id,time:current.time,count:current.entries.length,bytes:current.bytes,errors:current.errors,legacyCount:current.legacyCount,retentionDays:current.policy.retentionDays,matchesSaved:samePolicy(current.policy,saved)}:
+      {id:"",time:"",count:0,bytes:0,errors:0,legacyCount:0,retentionDays:0,matchesSaved:false};
   }
   async function exclusive(fn){
     if(running)throw new Error("Cleanup already running");
