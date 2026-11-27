@@ -1,6 +1,6 @@
 {
   "name": "@gfn-cis/opencode-temp-sanitize",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "OpenCode 2 plugin that gives each project its own temporary directory",
   "type": "module",
   "main": "index.js",
@@ -8,14 +8,17 @@
     "index.js",
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "dist"
   ],
   "scripts": {
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "knip": "knip"
+    "knip": "knip",
+    "build": "vite build",
+    "prepack": "npm run build"
   },
   "keywords": [
     "opencode",
@@ -26,19 +29,30 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GFN-CIS/opencode-temp-sanitize.git"
+    "url": "git+https://github.com/ItanBlackwell/opencode-temp-sanitize.git"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
     "node": ">=22.12.0",
-    "opencode": ">=2.0.0"
+    "opencode": ">=2.2.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
     "@vitest/coverage-v8": "^5.1.0",
     "knip": "^6.44.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "solid-js": "^1.9.0",
+    "vite": "^7.0.0",
+    "vite-plugin-solid": "^2.11.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./rpc": "./src/rpc.js",
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.2.0"
   }
 }
