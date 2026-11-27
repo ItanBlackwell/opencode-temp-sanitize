@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {beforeEach,afterEach,describe,it,expect} from "vitest";
+import {beforeEach,afterEach,describe,it,expect,vi} from "vitest";
 import {createManager} from "../src/manager.js";
 import {defaults} from "../src/settings.js";
 
@@ -39,6 +39,30 @@ describe("scheduled and selective cleanup",()=>{
     await manager.save({...await manager.settings(),enabled:true});
     now+=60000;await manager.tick();
     expect(await exists(file)).toBe(false);
+  });
+  it("keeps at most 50 summaries and reclaims only dead empty lease markers on scheduled scans",async()=>{
+    const uuid="12345678-1234-1234-1234-123456789abc";
+    const dead=await oldFile("project-1234abcd/.sanitize-lease-987654-"+uuid,0);
+    const live=await oldFile("global/.sanitize-lease-"+process.pid+"-"+uuid,0);
+    const unknown=await oldFile("project-1234abcd/.sanitize-lease-987654-abcd",0);
+    const data=await oldFile("project-1234abcd/keep.bin");
+    const kill=process.kill.bind(process);
+    const spy=vi.spyOn(process,"kill").mockImplementation((pid,signal)=>{
+      if(pid===987654)throw Object.assign(new Error("dead"),{code:"ESRCH"});
+      return kill(pid,signal);
+    });
+    try{
+      await manager.preview(await manager.settings());
+      expect(await exists(dead)).toBe(true);
+      for(let i=0;i<55;i++){now+=60000;await manager.tick();}
+      expect(await exists(dead)).toBe(false);
+      expect(await exists(live)).toBe(true);
+      expect(await exists(unknown)).toBe(true);
+      expect(await exists(data)).toBe(true);
+      expect(manager.history().length).toBe(50);
+      expect((await manager.candidates()).count).toBe(1);
+      expect(manager.history().every(record=>record.sample.length===0)).toBe(true);
+    }finally{spy.mockRestore();}
   });
   it("returns bounded pages and deletes only selected unchanged files",async()=>{
     for(let i=0;i<53;i++)await oldFile("project-1234abcd/"+String(i).padStart(2,"0")+".bin");
