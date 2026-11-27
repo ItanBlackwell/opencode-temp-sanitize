@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
-import path from "node:path";
-import {isProjectDir, protectedProject, sweepDir, sweepProjects} from "./sweep.js";
+import {sweepDir, sweepProjects} from "./sweep.js";
+import {analyzeStorage} from "./storage-scan.js";
 import {settingsStore} from "./settings.js";
 
 const managers = new Map();
@@ -19,30 +19,7 @@ function createManager(root, configDir) {
   const store = settingsStore(configDir);
   let running, stopped = false, timer, last = 0;
   const history = [];
-  async function analyze() {
-    const rows = [];
-    async function scan(dir, row, flat=false) {
-      for (const item of await fs.readdir(dir,{withFileTypes:true})) {
-        if (item.name.startsWith(".sanitize-")) continue;
-        const target = path.join(dir,item.name);
-        try {
-          const stat = await fs.lstat(target);
-          if (stat.isDirectory() && !stat.isSymbolicLink() && !flat) await scan(target,row);
-          else if (stat.isFile() || stat.isSymbolicLink()) {row.files++;row.bytes+=stat.size;}
-        } catch(e) {row.errors++;}
-      }
-    }
-    const legacy = {name:"Legacy root files",files:0,bytes:0,protected:true,errors:0};
-    await scan(root,legacy,true); rows.push(legacy);
-    for (const item of await fs.readdir(root,{withFileTypes:true})) {
-      if (!item.isDirectory() || !isProjectDir(item.name)) continue;
-      const dir = path.join(root,item.name);
-      const row = {name:item.name,files:0,bytes:0,protected:true,errors:0};
-      try {row.protected = await protectedProject(dir); await scan(dir,row);} catch(e){row.errors++;}
-      rows.push(row);
-    }
-    return rows;
-  }
+  const analyze=()=>analyzeStorage(root);
   async function run(mode) {
     if (running) throw new Error("Cleanup already running");
     running = (async()=>{
