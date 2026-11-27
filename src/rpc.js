@@ -10,7 +10,7 @@ const positive = {type:"integer", minimum:1, maximum:Number.MAX_SAFE_INTEGER};
 const array = (items) => ({type:"array", items});
 const empty = object({});
 const policy = object({
-  enabled:boolean, retentionDays:{...positive,maximum:3650},
+  enabled:boolean, showIndicator:boolean, retentionDays:{...positive,maximum:3650},
   intervalMinutes:{...positive,maximum:1440}, maxBytes:positive,
   maxFiles:positive, legacy:boolean,
 });
@@ -38,6 +38,7 @@ export const Sanitize = Rpc.define({
     clean:method(object({confirmed:{type:"boolean",const:true}}),record),
     history:method(empty,array(record)),
     candidates:method(empty,summary),
+    indicator:method(empty,object({visible:boolean,count,bytes:count})),
     candidatePage:method(object({snapshotId:string,offset:count}),page),
     cleanSelected:method(object({confirmed:{type:"boolean",const:true},snapshotId:string,ids:{type:"array",items:count,minItems:1,maxItems:500,uniqueItems:true}}),record),
   },
