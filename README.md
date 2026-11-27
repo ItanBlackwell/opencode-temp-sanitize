@@ -26,7 +26,7 @@ eventually breaks unrelated programs.
 - Never follows symlinks during normal traversal; preserves uploads, special files and lease metadata. Failed deletions are logged and retried on later sweeps.
 - Quotas are soft per-swept-directory warning thresholds, not hard limits. Recent files and live projects are never sacrificed to meet a quota.
 
-### Desktop settings (0.3.5)
+### Desktop settings (0.3.6)
 
 OpenCode Desktop 2.2+ loads the experimental GUI export from the globally configured plugin.
 Open Settings > Temporary Files (localized to the active interface language). Save the policy before preview or manual cleanup. Each of the seven cleanup parameters and the update-mode selector has a native tooltip, accessible on hover or keyboard focus. The GUI declares 63 locales matching OpenCode Desktop's current locale registry, with 48 plugin-specific keys per locale; shared actions use OpenCode's translations. Technical RPC diagnostics, file paths and project names are intentionally not translated. Translations are machine-authored and have not received native-speaker review.
@@ -40,7 +40,7 @@ Defaults: enabled, seven days, hourly, soft 2 GiB / 100000 files per inactive pr
 dry-run enabled, legacy preview disabled. Legacy files are preview-only because ownership
 cannot be established while the server is running. The old environment variables are no
 longer used. History contains up to 50 runs in memory and resets on server restart.
-Storage scans include protected projects but cleanup excludes them. Preview samples up to
+Storage scans report the logical file sizes across the entire server temporary tree, including uploads, root files and unrecognized directories. The scanner does not follow symbolic links or junctions; it excludes internal lease markers and reports unreadable entries as warnings. The canonical scanned root is shown under Advanced. Inventory coverage is independent of cleanup eligibility: protected projects, uploads and unrecognized directories remain outside the existing deletion scope. The storage value is displayed in the label column with the scan button in a separate padded control column. Preview samples up to
 100 paths; counts cover the whole scan. Quotas warn rather than force eviction.
 
 Build locally before installing from a directory:
