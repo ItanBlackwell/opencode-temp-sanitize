@@ -178,11 +178,8 @@ export default Plugin.define({
             </Show>
           </ui.SettingsSection>
           <ui.SettingsSection title={t("storage")}>
-            <ui.SettingsRow title={t("scanned")} description={total()?.errors?metric("warnings",total().errors):undefined}>
-              <div style={{display:"flex","flex-wrap":"wrap","align-items":"center","justify-content":"flex-end",gap:"12px","min-width":"0","max-width":"100%"}}>
-                <span style={{"font-variant-numeric":"tabular-nums","white-space":"nowrap","flex-shrink":"0"}}>{total()?formatStorage(total().bytes,locale()):"—"}</span>
-                <div style={{"flex-shrink":"0","max-width":"100%"}}><ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button></div>
-              </div>
+            <ui.SettingsRow title={t("scanned")} description={<span style={{"font-variant-numeric":"tabular-nums","overflow-wrap":"anywhere"}}>{total()?formatStorage(total().bytes,locale()):"—"}{total()?.errors?" · "+metric("warnings",total().errors):""}</span>}>
+              <div style={{"padding-inline-start":"12px","flex-shrink":"0"}}><ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button></div>
             </ui.SettingsRow>
             <ui.SettingsRow title={t(saved()?.dryRun?"previewOnly":"manual")}>
               <ui.Button size="small" variant={saved()?.dryRun?"contrast":"neutral"} disabled={busy()||dirty()} onClick={()=>run(()=>cleanup(true))}>{t("preview")}</ui.Button>
