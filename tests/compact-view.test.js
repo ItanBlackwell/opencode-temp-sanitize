@@ -18,6 +18,7 @@ describe("compact settings",()=>{
     expect(validPolicy({...defaults,intervalMinutes:1441})).toBe(false);
     expect(validPolicy({...defaults,maxBytes:NaN})).toBe(false);
     expect(validPolicy({...defaults,enabled:"false"})).toBe(false);
+    expect(validPolicy({...defaults,showIndicator:null})).toBe(false);
     expect(storedValue("retentionDays",1.5)).toBeNaN();
     expect(storedValue("intervalMinutes",1440)).toBe(1440);
   });
@@ -34,7 +35,7 @@ describe("compact settings",()=>{
     expect(advancedKeys).toEqual(["intervalMinutes","maxBytes","maxFiles","legacy","updates"]);
     for(const locale of locales){
       const copy=i18n[locale];
-      for(const key of [...advancedKeys,"enabled","retentionDays"]){
+      for(const key of [...advancedKeys,"enabled","retentionDays","showIndicator"]){
         expect(copy[labelKeys[key]??key]).toBeTruthy();
         expect(copy[helpKeys[key]]).toBeTruthy();
       }
