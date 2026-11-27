@@ -39,6 +39,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       return summary;
     });
   }
+  function storageSummary(){return inventory?.summary??{id:"",time:"",count:0,files:0,bytes:0,errors:0};}
   function storagePage({snapshotId,offset}){
     if(!inventory||inventory.summary.id!==snapshotId)throw new Error("Storage scan changed; analyze again");
     if(!Number.isSafeInteger(offset)||offset<0)throw new Error("Invalid offset");
@@ -123,7 +124,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   }
   if(schedule){timer=setTimeout(tick,0);timer.unref();}
   return {
-    settings:()=>store.read(),save,analyze,storagePage,preview:v=>run("preview",v),
+    settings:()=>store.read(),save,analyze,storageSummary,storagePage,preview:v=>run("preview",v),
     candidates:summary,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
     clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},
     history:()=>history.slice(),tick,
