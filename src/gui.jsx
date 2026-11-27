@@ -123,9 +123,16 @@ export default Plugin.define({
       function NumberRow(props){
         const size=props.name==="maxBytes";
         const value=()=>displayValue(props.name,config()[props.name]);
+        let lastStored=config()[props.name];
+        const [raw,setRaw]=createSignal(String(value()));
+        createEffect(()=>{
+          const next=config()[props.name];
+          if(Object.is(next,lastStored))return;
+          lastStored=next;setRaw(Number.isFinite(next)?String(value()):"");
+        });
         return <ui.SettingsRow id={props.name} title={<ParameterTitle name={props.name}/>}>
           <input aria-label={label(props.name)} type="number" min={size?1/GIB:1} max={size?Number.MAX_SAFE_INTEGER/GIB:maxValue(props.name)} step={size?"any":"1"}
-            disabled={busy()} value={Number.isFinite(value())?value():""} onInput={e=>change(props.name,storedValue(props.name,e.currentTarget.valueAsNumber))}
+            disabled={busy()} aria-invalid={!Number.isFinite(config()[props.name])} value={raw()} onInput={e=>{setRaw(e.currentTarget.value);lastStored=storedValue(props.name,e.currentTarget.valueAsNumber);change(props.name,lastStored);}}
             style={{width:"92px","max-width":"100%","text-align":"end","font-variant-numeric":"tabular-nums",padding:"4px 6px",border:"1px solid var(--border-weak-base, currentColor)","border-radius":"4px",background:"var(--surface-base, transparent)",color:"inherit"}}/>
         </ui.SettingsRow>;
       }
@@ -169,11 +176,11 @@ export default Plugin.define({
             </Show>
           </ui.SettingsSection>
           <ui.SettingsSection title={t("storage")}>
-            <ui.SettingsRow title={t("scanned")} description={total()?rowSummary(total()):undefined}>
+            <ui.SettingsRow title={t("scanned")} description={total()?.errors?metric("warnings",total().errors):undefined}>
               <span style={{"font-variant-numeric":"tabular-nums","white-space":"nowrap"}}>{total()?formatStorage(total().bytes,locale()):"—"}</span>
               <ui.Button size="small" busy={busy()} onClick={()=>run(scan)}>{t("scan")}</ui.Button>
             </ui.SettingsRow>
-            <ui.SettingsRow title={t("preview")} description={saved()?.dryRun?t("helpDry"):undefined}>
+            <ui.SettingsRow title={t(saved()?.dryRun?"previewOnly":"manual")}>
               <ui.Button size="small" variant={saved()?.dryRun?"contrast":"neutral"} disabled={busy()||dirty()} onClick={()=>run(()=>cleanup(true))}>{t("preview")}</ui.Button>
               <Show when={!saved()?.dryRun}>
                 <ui.Button size="small" variant="danger" disabled={busy()||dirty()} onClick={()=>setConfirm(true)}>{t("clean")}</ui.Button>
