@@ -23,7 +23,7 @@ const method = (input, output) => ({input, output, errors:{operation_failed:obje
 export const Sanitize = Rpc.define({
   id:"temp-sanitize",
   methods:{
-    protocol:method(empty,object({version:string})),
+    protocol:method(empty,object({version:string,root:string})),
     settings:method(empty,policy),
     save:method(policy,policy),
     analyze:method(empty,array(row)),
