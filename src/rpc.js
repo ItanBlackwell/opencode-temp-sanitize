@@ -12,13 +12,16 @@ const empty = object({});
 const policy = object({
   enabled:boolean, retentionDays:{...positive,maximum:3650},
   intervalMinutes:{...positive,maximum:1440}, maxBytes:positive,
-  maxFiles:positive, legacy:boolean, dryRun:boolean,
+  maxFiles:positive, legacy:boolean,
 });
 const row = object({name:string,files:count,bytes:count,protected:boolean,errors:count});
 const record = object({
   time:string,mode:{type:"string",enum:["automatic","manual","preview"]},dryRun:boolean,
   files:count,dirs:count,candidates:count,errors:count,sample:array(string),
 });
+const summary = object({id:string,time:string,count,bytes:count,errors:count,legacyCount:count,retentionDays:count});
+const candidate = object({id:count,path:string,bytes:count,modifiedAt:string});
+const page = object({snapshotId:string,offset:count,items:{type:"array",items:candidate,maxItems:50}});
 const method = (input, output) => ({input, output, errors:{operation_failed:object({method:string})}});
 export const Sanitize = Rpc.define({
   id:"temp-sanitize",
@@ -30,6 +33,9 @@ export const Sanitize = Rpc.define({
     preview:method(policy,record),
     clean:method(object({confirmed:{type:"boolean",const:true}}),record),
     history:method(empty,array(record)),
+    candidates:method(empty,summary),
+    candidatePage:method(object({snapshotId:string,offset:count}),page),
+    cleanSelected:method(object({confirmed:{type:"boolean",const:true},snapshotId:string,ids:{type:"array",items:count,minItems:1,maxItems:500,uniqueItems:true}}),record),
   },
   events:{},
 });
