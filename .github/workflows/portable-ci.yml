@@ -1,0 +1,35 @@
+name: Portable test build
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - shell: powershell
+        run: |
+          Get-ChildItem installer -Filter *.ps1 | ForEach-Object {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){throw ($errors -join '; ')}
+          }
+      - run: npm install
+      - run: npm run portable
+      - shell: powershell
+        run: |
+          $zip=Get-ChildItem release/Temp-Sanitize-Portable-*.zip
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath smoke
+          & ./tests/installer-smoke.ps1 -PackageRoot (Resolve-Path smoke/Temp-Sanitize).Path
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Temp-Sanitize-test-build
+          path: release/*
+          if-no-files-found: error
