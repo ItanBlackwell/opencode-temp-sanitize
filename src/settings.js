@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-export const defaults = Object.freeze({enabled:false, retentionDays:7, intervalMinutes:60, maxBytes:2147483648, maxFiles:100000, legacy:false});
+export const defaults = Object.freeze({enabled:false, showIndicator:true, retentionDays:7, intervalMinutes:60, maxBytes:2147483648, maxFiles:100000, legacy:false});
 export function validate(value) {
   if (!value || typeof value !== "object") throw new Error("Invalid settings");
   const result = {};
@@ -17,8 +17,9 @@ export function validate(value) {
 // A previous preview-only installation must never start deleting on upgrade.
 export function migrate(value) {
   if(value && Object.hasOwn(value,"dryRun") && typeof value.dryRun!=="boolean")throw new Error("Invalid legacy dryRun");
-  if(value?.dryRun === true) return validate({...value,enabled:false});
-  return validate(value);
+  const migrated=value&&typeof value==="object"?{showIndicator:true,...value}:value;
+  if(migrated?.dryRun === true) return validate({...migrated,enabled:false});
+  return validate(migrated);
 }
 // New atomic writes encode their owner PID; recover only dead-writer files.
 export async function pruneSettingsTemps(directory) {
