@@ -1,4 +1,4 @@
-import { Plugin, SettingsPage, Ipc } from "@opencode/plugin/gui";
+import { Plugin, SettingsPage, Ipc, Command } from "@opencode/plugin/gui";
 import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { Sanitize } from "./rpc.js";
 import { Schema } from "effect";
@@ -85,6 +85,19 @@ export default Plugin.define({
         </Show>
       </ui.SettingsLayout>;
     }
-    ctx.add(SettingsPage,{id:"temporary-files",title:"Temporary Files",render:()=> <Page/>});
+    if (!SettingsPage) {
+      console.warn("[temp-sanitize] SettingsPage API unavailable in this Desktop version");
+      return;
+    }
+    ctx.add(SettingsPage,{
+      id:"temporary-files",icon:"server",title:"Temporary Files",
+      entries:[{id:"enabled",title:"Automatic cleanup",keywords:"temp sanitize storage cleanup"}],
+      render:()=> <Page/>,
+    });
+    if (Command) ctx.add(Command,{
+      id:"open-settings",title:"Temp Sanitize: Open settings",
+      run:()=>ctx.layout.settings("temporary-files"),
+    });
+    console.info("[temp-sanitize] Temporary Files settings page registered",metadata.version);
   }
 });
