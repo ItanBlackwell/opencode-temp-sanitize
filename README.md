@@ -12,7 +12,7 @@ OpenCode agents can create large amounts of temporary data in a shared `opencode
 
 - **Project isolation:** a dedicated temporary directory for each OpenCode project and its shell commands.
 - **Safe scheduled cleanup:** configurable retention, periodic scans, and protection for active projects.
-- **Manual control:** preview the current settings, select individual files or entire pages, and confirm deletion.
+- **Manual control:** preview the current settings, select individual files or entire pages, confirm deletion, or extend retention without deleting data.
 - **Storage overview:** total logical size and file counts across the OpenCode temporary tree, with paginated directory statistics.
 - **Cleanup indicator:** a compact amber trash icon in the lower-left Desktop area, compatible by design with [Usage Dashboard](https://github.com/ItanBlackwell/usage-dashboard).
 - **Native settings:** compact controls, contextual help, a sticky Save/Cancel toolbar, and translations for all 63 supported Desktop locales.
@@ -37,7 +37,7 @@ The installer places the bundled plugin under `%USERPROFILE%\.config\opencode\pl
 To verify a downloaded ZIP in PowerShell:
 
 ```powershell
-Get-FileHash .\Temp-Sanitize-Portable-0.3.11.zip -Algorithm SHA256
+Get-FileHash .\Temp-Sanitize-Portable-0.3.12.zip -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -92,6 +92,12 @@ The first scheduled operation runs on startup. Both modes use the same configure
 4. Save the settings before deleting files. Select individual entries or the current page, then click **Clean selected** and confirm. Alternatively, use **Clean now** and confirm to run the complete saved cleanup policy.
 
 You can select files across pages, up to 500 per confirmed selection. A refreshed candidate snapshot resets selection to prevent stale IDs from targeting a different file. Previewing unsaved settings does not persist them or perform deletion. Invalid settings block preview/save; real deletion is disabled while the settings have unsaved changes.
+
+### Extend retention
+
+Click the clock icon beside an eligible regular file or select up to 500 candidates and click **Extend retention**. The plugin updates the filesystem access time to the server's current time, preserving contents and modification time within filesystem timestamp precision. Successfully renewed files immediately leave the candidate list and the cleanup indicator refreshes. They become eligible again after the configured retention period unless used again. No persistent exclusion list is created.
+
+The action is unavailable while settings are unsaved or a deletion confirmation is open. Symbolic links and files with multiple hard links are not renewed. Changed, missing, newly protected or inaccessible files are skipped and counted as warnings; failed items remain until the next scan.
 
 > **Deletion is permanent, not a move to the Recycle Bin.** Installation rollback restores plugin files, not deleted temporary data. Always review candidates before enabling automatic deletion or confirming manual cleanup.
 

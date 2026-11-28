@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {sweepDir,sweepProjects} from "./sweep.js";
 import {analyzeStorage} from "./storage-scan.js";
 import {settingsStore,validate,pruneSettingsTemps} from "./settings.js";
-import {PAGE_SIZE,candidatePage,selectionEntries,deleteCandidate,identity,samePolicy} from "./candidates.js";
+import {PAGE_SIZE,candidatePage,selectionEntries,deleteCandidate,extendCandidate,identity,samePolicy} from "./candidates.js";
 
 const managers=new Map();
 export function acquireManager(root,configDir){
@@ -118,6 +118,23 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
       return record;
     });
   }
+  async function extendSelected(input){
+    return exclusive(async()=>{
+      const saved=await store.read();
+      if(!snapshot||!samePolicy(snapshot.policy,saved))throw new Error("Candidate policy changed; save settings and refresh");
+      const entries=selectionEntries(snapshot,input);
+      const old=snapshot,successful=new Set();
+      let errors=0;
+      for(let i=0;i<entries.length;i++){
+        try{if(await extendCandidate(root,entries[i],saved,clock()))successful.add(input.ids[i]);else errors++;}
+        catch{errors++;}
+      }
+      // Keep failures visible. Rotate snapshot IDs to prevent stale selection.
+      const remaining=old.entries.filter((_,i)=>!successful.has(i));
+      snapshot={...old,id:randomUUID(),entries:remaining,bytes:remaining.reduce((sum,e)=>sum+e.size,0),errors:old.errors+errors};
+      return {extended:successful.size,errors};
+    });
+  }
   async function tick(){
     try{
       const config=await store.read();
@@ -131,7 +148,7 @@ export function createManager(root,configDir,{clock=Date.now,schedule=true}={}){
   if(schedule){timer=setTimeout(tick,0);timer.unref();}
   return {
     settings:()=>store.read(),save,analyze,storageSummary,storagePage,preview:v=>run("preview",v),
-    candidates:summary,indicator,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,
+    candidates:summary,indicator,candidatePage:v=>candidatePage(snapshot,v),cleanSelected,extendSelected,
     clean:v=>{if(v.confirmed!==true)throw new Error("Confirmation required");return run("manual");},
     history:()=>history.slice(),tick,
     async stop(){stopped=true;clearTimeout(timer);await running?.catch(()=>{});snapshot=undefined;inventory=undefined;history.length=0;}

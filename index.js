@@ -73,6 +73,7 @@ export default {
         indicator: () => manager.indicator(),
         candidatePage: input => manager.candidatePage(input),
         cleanSelected: input => manager.cleanSelected(input),
+        extendSelected: input => manager.extendSelected(input),
       };
       // OpenCode's promise adapter invokes Effect.tryPromise: even synchronous
       // handlers must return a Promise, otherwise the host raises rpc.internal.

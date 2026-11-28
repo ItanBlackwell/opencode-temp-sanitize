@@ -22,7 +22,7 @@ const record = object({
   files:count,dirs:count,candidates:count,errors:count,sample:array(string),
 });
 const summary = object({id:string,time:string,count,bytes:count,errors:count,legacyCount:count,retentionDays:count,matchesSaved:boolean});
-const candidate = object({id:count,path:string,bytes:count,modifiedAt:string});
+const candidate = object({id:count,path:string,bytes:count,modifiedAt:string,lastUsedAt:string,canExtend:boolean});
 const page = object({snapshotId:string,offset:count,items:{type:"array",items:candidate,maxItems:50}});
 const method = (input, output) => ({input, output, errors:{operation_failed:object({method:string})}});
 export const Sanitize = Rpc.define({
@@ -40,6 +40,7 @@ export const Sanitize = Rpc.define({
     candidates:method(empty,summary),
     indicator:method(empty,object({visible:boolean,count,bytes:count})),
     candidatePage:method(object({snapshotId:string,offset:count}),page),
+    extendSelected:method(object({snapshotId:string,ids:{type:"array",items:count,minItems:1,maxItems:500,uniqueItems:true}}),object({extended:count,errors:count})),
     cleanSelected:method(object({confirmed:{type:"boolean",const:true},snapshotId:string,ids:{type:"array",items:count,minItems:1,maxItems:500,uniqueItems:true}}),record),
   },
   events:{},

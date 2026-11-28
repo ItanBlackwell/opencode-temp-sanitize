@@ -72,6 +72,7 @@ export default Plugin.define({
       let candidateAnchor,pendingRequest=0;
       const [selection,setSelection]=createSignal(new Set());
       const [selectionNotice,setSelectionNotice]=createSignal(false);
+      const [extensionResult,setExtensionResult]=createSignal();
       let epoch=0,polling=false;
       let candidateTimer;
       const [advanced,setAdvanced]=createSignal(advancedKeys.includes(props.target));
@@ -124,7 +125,7 @@ export default Plugin.define({
         await refreshCandidates();
       };
       onMount(()=>run(load));
-      const clearResult=()=>{setResult(undefined);setPreviewPolicy(undefined);};
+      const clearResult=()=>{setResult(undefined);setPreviewPolicy(undefined);setExtensionResult(undefined);};
       const change=(key,value)=>{setConfig(old=>({...old,[key]:value}));setConfirm(false);clearResult();setSelection(new Set());setSelectionNotice(false);};
       const dirty=()=>!!config()&&!!saved()&&JSON.stringify(config())!==JSON.stringify(saved());
       const valid=()=>validPolicy(config());
@@ -238,6 +239,7 @@ export default Plugin.define({
         </details>;
       }
       async function cleanup(mode){
+        setExtensionResult(undefined);
         const draft=mode==="preview"?{...config()}:undefined;
         if(mode==="preview"&&!validPolicy(draft))return;
         if(mode!=="preview"&&(dirty()||confirm()!==mode))return;
@@ -250,6 +252,16 @@ export default Plugin.define({
         setResult(record);setPreviewPolicy(draft);clearSelection();setSelectionNotice(false);
         if(!record.dryRun){setInventory(undefined);setInventoryPage(undefined);}
         await refreshHistory();await refreshCandidates();
+      }
+      async function extendRetention(ids){
+        const id=snapshot()?.id;
+        if(!id||!ids.length||dirty()||!snapshot()?.matchesSaved)return;
+        setExtensionResult(undefined);setConfirm(false);
+        const outcome=await call().extendSelected({snapshotId:id,ids});
+        if(!active)return;
+        setExtensionResult(outcome);clearSelection();setSelectionNotice(false);
+        void indicator.refresh();
+        await refreshCandidates();
       }
       async function fetchInventoryPage(offset,token=epoch){
         const id=inventory()?.id;
@@ -334,11 +346,13 @@ export default Plugin.define({
                 <ui.Button size="small" variant="neutral" disabled={busy()} onClick={()=>{const open=!listOpen();setListOpen(open);if(open&&!page()&&snapshot().count)void run(()=>fetchPage(0));}}>{t("details")}</ui.Button>
               </ui.SettingsRow>
               <Show when={snapshot().legacyCount>0}><ui.SettingsRow title={t("legacy")} description={t("helpLegacy")}>{number(snapshot().legacyCount)}</ui.SettingsRow></Show>
+              <Show when={extensionResult()}>{outcome=><div role="status" aria-live="polite" style={{"font-size":"12px","margin-block":"8px","overflow-wrap":"anywhere"}}>{metric("extended",outcome().extended)}{outcome().errors?" · "+metric("warnings",outcome().errors):""}</div>}</Show>
               <Show when={selectionNotice()}><ui.SettingsRow title={t("selectionChanged")}/></Show>
               <Show when={listOpen()&&snapshot().count>0}>
                 <ui.SettingsRow title={metric("selected",selectionCount())+" / 500"} description={dirty()?t("unsaved"):!snapshot()?.matchesSaved?t("preview"):undefined}>
                   <Actions>
                     <ui.Button size="small" disabled={busy()||!selectionCount()} onClick={clearSelection}>{t("common.cancel")}</ui.Button>
+                    <ui.Tooltip placement="top" value={t("helpExtendRetention")}><span><ui.Button size="small" variant="neutral" disabled={!canSelect()||!selectionCount()||!!confirm()} onClick={()=>run(()=>extendRetention([...selection()]))}>{t("extendRetention")}</ui.Button></span></ui.Tooltip>
                     <ui.Button size="small" variant="danger" disabled={!canSelect()||!selectionCount()} onClick={()=>setConfirm("selected")}>{t("cleanSelected")}</ui.Button>
                   </Actions>
                 </ui.SettingsRow>
@@ -358,11 +372,17 @@ export default Plugin.define({
                     </Actions>
                   </div>
                   <div style={{"max-height":"320px","overflow-y":"auto","min-width":"0"}}>
-                    <For each={pageItems()}>{item=><label title={item.path+" · "+date(item.modifiedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0","border-bottom":"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
+                    <For each={pageItems()}>{item=><div title={item.path+" · "+date(item.lastUsedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0","border-bottom":"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
                       <input type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={!canSelect()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
-                      <span dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px"}}>{item.path}</span>
+                      <span dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px"}} onClick={()=>choose(item.id,!selection().has(item.id))}>{item.path}</span>
                       <span style={{"flex-shrink":"0","font-size":"11px","font-variant-numeric":"tabular-nums"}}>{formatStorage(item.bytes,locale())}</span>
-                    </label>}</For>
+                      <ui.Tooltip placement="top" value={t("helpExtendRetention")}>
+                        <span style={{display:"inline-flex","flex-shrink":"0"}}><button type="button" aria-label={t("extendRetention")+": "+item.path} disabled={!canSelect()||!item.canExtend||!!confirm()} onClick={()=>run(()=>extendRetention([item.id]))}
+                          style={{display:"inline-flex","align-items":"center","justify-content":"center",width:"26px",height:"26px",border:"0",background:"transparent",color:"inherit","border-radius":"4px",cursor:!canSelect()||!item.canExtend||!!confirm()?"default":"pointer",opacity:!canSelect()||!item.canExtend||!!confirm()?0.4:1}}>
+                          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 3 6.7M3 12V5m0 7h7"/><path d="M12 7v5l3 2"/></svg>
+                        </button></span>
+                      </ui.Tooltip>
+                    </div>}</For>
                   </div>
                 </Show>
               </Show>
@@ -429,6 +449,7 @@ export default Plugin.define({
             </Show></Actions>
           </ui.SettingsRow>
         </ui.SettingsSection>
+        <footer style={{"font-size":"10px","line-height":"1.5",color:"var(--text-weak, currentColor)",opacity:0.8,"text-align":"center","margin-block":"16px 8px","overflow-wrap":"anywhere"}}>© 2026 ItanBlackwell · © 2026 GFN-CIS · MIT</footer>
       </ui.SettingsLayout>;
     }
     if (!SettingsPage) {
