@@ -97,7 +97,13 @@ jobs:
           $expected = (Get-Content release/SHA256SUMS.txt -Raw).Trim()
           $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip[0].FullName).Hash.ToLowerInvariant() + "  " + $zip[0].Name
           if ($expected -cne $actual) { throw 'Checksum mismatch' }
-          $releaseArgs = @('release','create',$env:TAG,'--repo',$env:GH_REPO,'--title',"Temp Sanitize $env:TAG",'--draft','--generate-notes')
+          $releaseArgs = @('release','create',$env:TAG,'--repo',$env:GH_REPO,'--title',"Temp Sanitize $env:TAG",'--draft')
+          $notes = "docs/release-notes/$($env:TAG).md"
+          if (Test-Path -LiteralPath $notes -PathType Leaf) {
+            $releaseArgs += @('--notes-file',(Resolve-Path -LiteralPath $notes).Path)
+          } else {
+            $releaseArgs += '--generate-notes'
+          }
           if ($env:GITHUB_REF -eq 'refs/heads/main' -and $env:GITHUB_EVENT_NAME -eq 'push') {
             $releaseArgs += @('--target',$env:SOURCE_SHA)
           } else {
