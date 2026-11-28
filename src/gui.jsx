@@ -449,7 +449,13 @@ export default Plugin.define({
             </Show></Actions>
           </ui.SettingsRow>
         </ui.SettingsSection>
-        <footer style={{"font-size":"10px","line-height":"1.5",color:"var(--text-weak, currentColor)",opacity:0.8,"text-align":"center","margin-block":"16px 8px","overflow-wrap":"anywhere"}}>© 2026 ItanBlackwell · © 2026 GFN-CIS · MIT</footer>
+        <footer style={{"font-size":"10px","line-height":"1.5",color:"var(--text-weak, currentColor)",opacity:0.8,"text-align":"center","margin-block":"16px 8px","overflow-wrap":"anywhere"}}>© 2026 ItanBlackwell · © 2026 GFN-CIS · MIT · <a href="https://github.com/ItanBlackwell/opencode-temp-sanitize" target="_blank" rel="noopener noreferrer" title="https://github.com/ItanBlackwell/opencode-temp-sanitize"
+          style={{color:"inherit","text-decoration":"underline","text-underline-offset":"2px",cursor:"pointer","white-space":"nowrap"}}
+          onClick={event=>{
+            if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||typeof ctx.system?.openExternal!=="function")return;
+            try{const result=ctx.system.openExternal("https://github.com/ItanBlackwell/opencode-temp-sanitize");event.preventDefault();Promise.resolve(result).catch(()=>{});}
+            catch{/* Safe native anchor fallback. */}
+          }}>GitHub ↗</a></footer>
       </ui.SettingsLayout>;
     }
     if (!SettingsPage) {
