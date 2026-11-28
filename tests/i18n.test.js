@@ -24,5 +24,7 @@ describe("Desktop localization",()=>{
     expect(i18n.en.helpDry).toContain("even with manual cleanup");
     expect(i18n.ru.helpDry).toContain("не удаляются");
     expect(i18n.ru.helpLegacy).toContain("никогда не удаляет");
+    expect(i18n.ru.extendRetention).toBe("Продлить хранение");
+    expect(i18n.en.helpExtendRetention).toContain("without deleting");
   });
 });

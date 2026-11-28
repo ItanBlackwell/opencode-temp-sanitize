@@ -105,7 +105,17 @@ try {
   assert.deepEqual(await invoke("indicator",{}),{visible:false,count:0,bytes:0});
   await invoke("save",{...saved,retentionDays:1});
   assert.deepEqual(await invoke("indicator",{}),{visible:true,count:1,bytes:128});
-  const selected=await invoke("cleanSelected",{confirmed:true,snapshotId:ready.id,ids:[0]});
+  const beforeRenewal=await fs.stat(candidate);
+  assert.equal((await invoke("candidatePage",{snapshotId:ready.id,offset:0})).items[0].canExtend,true);
+  assert.deepEqual(await invoke("extendSelected",{snapshotId:ready.id,ids:[0]}),{extended:1,errors:0});
+  const renewed=await fs.stat(candidate);
+  assert.ok(Math.abs(renewed.mtimeMs-beforeRenewal.mtimeMs)<2);
+  assert.ok(Date.now()-renewed.atimeMs<60000);
+  assert.deepEqual(await invoke("indicator",{}),{visible:false,count:0,bytes:0});
+  await fs.utimes(candidate,old,old);
+  await invoke("preview",{...saved,retentionDays:1});
+  const again=await invoke("candidates",{});
+  const selected=await invoke("cleanSelected",{confirmed:true,snapshotId:again.id,ids:[0]});
   assert.equal(selected.files,1);
   assert.deepEqual(await invoke("indicator",{}),{visible:false,count:0,bytes:0});
   await assert.rejects(fs.stat(candidate),{code:"ENOENT"});

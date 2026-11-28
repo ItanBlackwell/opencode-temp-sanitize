@@ -151,3 +151,102 @@ describe("scheduled and selective cleanup",()=>{
     expect(await exists(target)).toBe(true);
   });
 });
+
+describe("retention renewal",()=>{
+  async function ready(){
+    await manager.preview(await manager.settings());
+    const summary=await manager.candidates();
+    return {summary,items:manager.candidatePage({snapshotId:summary.id,offset:0}).items};
+  }
+  it("renews selected access times without changing content, mtime or storage totals, including after restart",async()=>{
+    const a=await oldFile("project-1234abcd/a.bin",32);
+    const b=await oldFile("project-1234abcd/b.bin",64);
+    const before=await fs.stat(a);
+    const overview=await manager.analyze();
+    const {summary,items}=await ready();
+    const chosen=items.find(x=>x.path.endsWith("a.bin"));
+    expect(chosen.canExtend).toBe(true);
+    expect(new Date(chosen.lastUsedAt).getTime()).toBeLessThan(now-86400000);
+    expect(await manager.extendSelected({snapshotId:summary.id,ids:[chosen.id]})).toEqual({extended:1,errors:0});
+    const after=await fs.stat(a);
+    expect(Math.abs(after.atimeMs-now)).toBeLessThan(2000);
+    expect(Math.abs(after.mtimeMs-before.mtimeMs)).toBeLessThan(2);
+    expect(after.size).toBe(before.size);
+    expect(await manager.indicator()).toEqual({visible:true,count:1,bytes:64});
+    expect(manager.storageSummary()).toEqual(overview);
+    await expect(manager.extendSelected({snapshotId:summary.id,ids:[chosen.id]})).rejects.toThrow();
+    await expect(manager.cleanSelected({confirmed:true,snapshotId:summary.id,ids:[chosen.id]})).rejects.toThrow();
+    await manager.stop();
+    manager=createManager(root,path.join(sandbox,"config"),{clock:()=>now,schedule:false});
+    expect((await ready()).items.map(x=>x.path)).toEqual([path.relative(root,b)]);
+    expect(await fs.readFile(a)).toEqual(Buffer.alloc(32));
+    now+=2*86400000;
+    expect((await ready()).items.length).toBe(2);
+  });
+  it("supports multiple IDs and clears the indicator after the final renewal",async()=>{
+    await oldFile("global/a.bin",10);
+    await oldFile("global/b.bin",20);
+    const {summary,items}=await ready();
+    expect(await manager.extendSelected({snapshotId:summary.id,ids:items.map(x=>x.id)})).toEqual({extended:2,errors:0});
+    expect((await manager.candidates())).toMatchObject({count:0,bytes:0});
+    expect(await manager.indicator()).toEqual({visible:false,count:0,bytes:0});
+    expect((await ready()).summary.count).toBe(0);
+  });
+  it("rejects unsaved policy, invalid IDs and duplicate IDs",async()=>{
+    await oldFile("global/a.bin");
+    const saved=await manager.settings();
+    await manager.preview({...saved,retentionDays:2});
+    let s=await manager.candidates();
+    await expect(manager.extendSelected({snapshotId:s.id,ids:[0]})).rejects.toThrow();
+    s=(await ready()).summary;
+    for(const ids of [[],[999],[0,0],[-1],[0.5]])await expect(manager.extendSelected({snapshotId:s.id,ids})).rejects.toThrow();
+    expect((await manager.candidates()).count).toBe(1);
+  });
+  it("keeps failures in the candidate list and skips changed, hard-linked and newly leased files",async()=>{
+    const changed=await oldFile("project-1234abcd/changed.bin");
+    const linked=await oldFile("project-1234abcd/linked.bin");
+    const leased=await oldFile("project-abcdef12/leased.bin");
+    const ok=await oldFile("global/ok.bin");
+    const outside=path.join(sandbox,"outside.bin");
+    await fs.link(linked,outside);
+    const linkedBefore=await fs.stat(outside);
+    const {summary,items}=await ready();
+    expect(items.find(x=>x.path.endsWith("linked.bin")).canExtend).toBe(false);
+    await fs.writeFile(changed,Buffer.alloc(40));
+    await oldFile("project-abcdef12/.sanitize-lease-"+process.pid+"-abcd",0);
+    const result=await manager.extendSelected({snapshotId:summary.id,ids:items.map(x=>x.id)});
+    expect(result).toEqual({extended:1,errors:3});
+    expect((await manager.candidates())).toMatchObject({count:3,errors:3});
+    expect((await fs.stat(outside)).atimeMs).toBe(linkedBefore.atimeMs);
+    for(const f of [changed,linked,leased,ok])expect(await exists(f)).toBe(true);
+  });
+  it("rejects a file that becomes hard-linked after scanning",async()=>{
+    const file=await oldFile("global/a.bin");
+    const before=await fs.stat(file);
+    const {summary}=await ready();
+    const other=path.join(sandbox,"other.bin");
+    await fs.link(file,other);
+    expect(await manager.extendSelected({snapshotId:summary.id,ids:[0]})).toEqual({extended:0,errors:1});
+    expect((await fs.stat(other)).atimeMs).toBe(before.atimeMs);
+  });
+  it.skipIf(process.platform==="win32")("does not follow symbolic links or replaced parent directories",async()=>{
+    const outside=path.join(sandbox,"outside");
+    await fs.mkdir(outside);
+    const external=path.join(outside,"a.bin");
+    await fs.writeFile(external,"outside");
+    const old=new Date(now-3*86400000);
+    await fs.utimes(external,old,old);
+    const target=await oldFile("global/sub/a.bin");
+    const link=path.join(root,"global","link.bin");
+    await fs.symlink(external,link);
+    await fs.lutimes(link,old,old);
+    const {summary,items}=await ready();
+    expect(items.find(x=>x.path.endsWith("link.bin")).canExtend).toBe(false);
+    await fs.rename(path.dirname(target),path.join(sandbox,"original"));
+    await fs.symlink(outside,path.dirname(target),"dir");
+    const before=await fs.stat(external);
+    expect(await manager.extendSelected({snapshotId:summary.id,ids:items.map(x=>x.id)})).toEqual({extended:0,errors:2});
+    expect((await fs.stat(external)).atimeMs).toBe(before.atimeMs);
+    expect(await fs.readFile(external,"utf8")).toBe("outside");
+  });
+});
