@@ -373,8 +373,8 @@ export default Plugin.define({
                   </div>
                   <div style={{"max-height":"320px","overflow-y":"auto","min-width":"0"}}>
                     <For each={pageItems()}>{item=><div title={item.path+" · "+date(item.lastUsedAt)} style={{display:"flex","align-items":"center",gap:"8px",padding:"5px 0","border-bottom":"1px solid var(--v2-border-border-muted, transparent)","min-width":"0",cursor:"pointer"}}>
-                      <input type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={!canSelect()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
-                      <span dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px"}} onClick={()=>choose(item.id,!selection().has(item.id))}>{item.path}</span>
+                      <input id={"sanitize-candidate-"+item.id} type="checkbox" aria-label={item.path} checked={selection().has(item.id)} disabled={!canSelect()||(!selection().has(item.id)&&selectionCount()>=500)} onChange={e=>choose(item.id,e.currentTarget.checked)} style={{"flex-shrink":"0"}}/>
+                      <label for={"sanitize-candidate-"+item.id} dir="ltr" style={{flex:"1","min-width":"0",overflow:"hidden","text-overflow":"ellipsis","white-space":"nowrap","font-size":"12px",cursor:"pointer"}}>{item.path}</label>
                       <span style={{"flex-shrink":"0","font-size":"11px","font-variant-numeric":"tabular-nums"}}>{formatStorage(item.bytes,locale())}</span>
                       <ui.Tooltip placement="top" value={t("helpExtendRetention")}>
                         <span style={{display:"inline-flex","flex-shrink":"0"}}><button type="button" aria-label={t("extendRetention")+": "+item.path} disabled={!canSelect()||!item.canExtend||!!confirm()} onClick={()=>run(()=>extendRetention([item.id]))}
